@@ -171,7 +171,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Random legal games played through widget taps and drags in random orientations; after each move, the rendered piece map equals the controller FEN.
   - _Req 15. Design 12_
 
-- [ ] 28. Performance pass
+- [x] 28. Performance pass
   - Check `RepaintBoundary` placement and `shouldRepaint`; run the example in profile mode on an Android device and record frame times for drag and animation.
   - _Req 14. Design 11_
 

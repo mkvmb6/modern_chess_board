@@ -352,7 +352,12 @@ Haptics: `HapticFeedback.selectionClick()` on pickup and `lightImpact()` on drop
 - Legal moves are cached per FEN.
 - Layers use `RepaintBoundary`. Painters implement `shouldRepaint` by value comparison.
 - Pieces are keyed widgets inside a single `Stack`. The drag and animation layers are updated through `ValueListenableBuilder`, not `setState` on the whole board.
-- Profile-mode frame checks are done manually in the example app on Android (see tasks).
+- Highlights are worked out once per change into a notifier shared by the tints and markers painters, and each painter repaints only for the fields it draws (hover repaints the tints, not the markers).
+- The semantics grid only rebuilds while assistive technology is on.
+- The move animation layer follows the flip and frame ticks only while a plan runs; input blocking during a flip rebuilds on status changes, not frames.
+- Measured (task 28, widget tests with `debugOnProfilePaint`): no interaction rebuilds the board; selecting repaints the two highlight layers once; hover, drag and animation frames repaint only what moved; a notification that changes nothing costs nothing. `test/widget/performance_test.dart` guards these.
+- Known, not changed: during a flip, the pieces layer rebuilds its 32 `Positioned` children each frame (about 20 frames). Painting stays cheap because each piece has its own `RepaintBoundary`; a `Flow` with `repaint: flip` would also remove the rebuilds if profiling ever shows a need.
+- Profile-mode frame timing on an Android device still has to be done by hand in the example app (no device was attached for task 28).
 
 ## 12. Testing strategy
 

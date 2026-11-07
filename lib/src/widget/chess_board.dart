@@ -434,12 +434,11 @@ class _ChessBoardState extends State<ChessBoard>
     _interaction.pressUp(dragged: false);
   }
 
-  /// What the semantics grid rebuilds for.
-  late final Listenable _semanticsChanges = Listenable.merge([
-    _positionChanges,
-    _interaction.selection,
-    _premove,
-  ]);
+  /// What the semantics grid rebuilds for. Without a screen reader there
+  /// is nothing to keep up to date, so it waits until one turns on.
+  late final _SemanticsChanges _semanticsChanges = _SemanticsChanges(
+    Listenable.merge([_positionChanges, _interaction.selection, _premove]),
+  );
 
   /// Plays the sound for the change just seen, if it is a move that
   /// notified listeners. Called once per notification, so one move makes
@@ -708,48 +707,51 @@ class _ChessBoardState extends State<ChessBoard>
   Widget _whileNotFlipping(Widget child) =>
       FadeTransition(opacity: _overlayOpacity, child: child);
 
-  /// A highlight painter that repaints only when the position, selection or
-  /// hover changes, and only if what it would paint actually differs.
+  /// What the highlight layers show, worked out once per change for both
+  /// of them (tints under the pieces, markers over them). Only notifies when
+  /// the result differs, and each painter repaints only for the parts it
+  /// draws.
+  late final ValueNotifier<BoardHighlights> _highlights = ValueNotifier(
+    BoardHighlights.empty,
+  );
+
+  /// What [_highlights] is worked out from.
+  late final Listenable _highlightInputs = Listenable.merge([
+    _positionChanges,
+    _interaction.selection,
+    _hover,
+    _premove,
+    _keyboard.focus,
+  ]);
+
+  void _updateHighlights() {
+    if (!mounted) return;
+    final selected = _interaction.selection.value;
+    final piece = selected == null ? null : widget.controller.pieceAt(selected);
+    final premoving = piece != null && _interaction.canPremove(piece.color);
+    final queued = _premove.value;
+    _highlights.value = BoardHighlights.compute(
+      controller: widget.controller,
+      selected: selected,
+      hover: _hover.value,
+      showLastMove: widget.showLastMove,
+      theme: widget.effectiveTheme,
+      focus: _keyboard.focus.value,
+      premove: queued == null ? null : (from: queued.from, to: queued.to),
+      premoveTargets: premoving ? _interaction.targetsFrom(selected!) : null,
+    );
+  }
+
+  /// A highlight painter for [_highlights].
   Widget _highlightLayer(
     ChessBoardTheme theme,
     CustomPainter Function(BoardHighlights) painter,
   ) => IgnorePointer(
     child: RepaintBoundary(
-      child: ListenableBuilder(
-        listenable: Listenable.merge([
-          _positionChanges,
-          _interaction.selection,
-          _hover,
-          _premove,
-          _keyboard.focus,
-        ]),
-        builder: (context, _) {
-          final selected = _interaction.selection.value;
-          final piece = selected == null
-              ? null
-              : widget.controller.pieceAt(selected);
-          final premoving =
-              piece != null && _interaction.canPremove(piece.color);
-          final queued = _premove.value;
-          return CustomPaint(
-            painter: painter(
-              BoardHighlights.compute(
-                controller: widget.controller,
-                selected: selected,
-                hover: _hover.value,
-                showLastMove: widget.showLastMove,
-                theme: theme,
-                focus: _keyboard.focus.value,
-                premove: queued == null
-                    ? null
-                    : (from: queued.from, to: queued.to),
-                premoveTargets: premoving
-                    ? _interaction.targetsFrom(selected!)
-                    : null,
-              ),
-            ),
-          );
-        },
+      child: ValueListenableBuilder<BoardHighlights>(
+        valueListenable: _highlights,
+        builder: (context, highlights, _) =>
+            CustomPaint(painter: painter(highlights)),
       ),
     ),
   );
@@ -777,6 +779,8 @@ class _ChessBoardState extends State<ChessBoard>
     _animation.addListener(_syncHiddenSquare);
     _shownPieces = widget.controller.pieces;
     _showHint(widget.hint);
+    _highlightInputs.addListener(_updateHighlights);
+    _updateHighlights();
   }
 
   /// Loads [ChessBoard.initialFen] into a controller that hasn't been used
@@ -872,6 +876,14 @@ class _ChessBoardState extends State<ChessBoard>
       _showHint(_hint.value);
     }
     _sound.pack = widget.soundPack;
+    if (widget.effectiveTheme != oldWidget.effectiveTheme ||
+        widget.showLastMove != oldWidget.showLastMove ||
+        widget.controller != oldWidget.controller ||
+        widget.interactiveSide != oldWidget.interactiveSide ||
+        widget.enablePremoves != oldWidget.enablePremoves ||
+        widget.readOnly != oldWidget.readOnly) {
+      _updateHighlights();
+    }
     if (widget.pieceSet != oldWidget.pieceSet &&
         widget.pieceSet != _loadingSet) {
       _load(widget.pieceSet);
@@ -1245,6 +1257,9 @@ class _ChessBoardState extends State<ChessBoard>
     _hintTimer?.cancel();
     _hint.dispose();
     _premove.dispose();
+    _highlightInputs.removeListener(_updateHighlights);
+    _highlights.dispose();
+    _semanticsChanges.dispose();
     _keyboard.dispose();
     _focusNode.dispose();
     _userDrawings.dispose();
@@ -1609,7 +1624,7 @@ class _KeyboardStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: Listenable.merge([keyboard.typed, keyboard.navigationMode]),
+    listenable: keyboard.statusChanges,
     builder: (context, _) {
       final typed = keyboard.typed.value;
       final text = typed.isNotEmpty
@@ -1773,17 +1788,78 @@ class _ChangeSignal extends ChangeNotifier {
 }
 
 /// Ignores pointer input while [flip] runs.
-class _IgnoreWhileFlipping extends AnimatedWidget {
-  const _IgnoreWhileFlipping({
-    required Animation<double> flip,
-    required this.child,
-  }) : super(listenable: flip);
+class _IgnoreWhileFlipping extends StatefulWidget {
+  const _IgnoreWhileFlipping({required this.flip, required this.child});
 
+  final Animation<double> flip;
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    final flip = listenable as Animation<double>;
-    return IgnorePointer(ignoring: flip.status.isAnimating, child: child);
+  State<_IgnoreWhileFlipping> createState() => _IgnoreWhileFlippingState();
+}
+
+/// Rebuilds when the flip starts or stops, not on every frame of it.
+class _IgnoreWhileFlippingState extends State<_IgnoreWhileFlipping> {
+  late bool _flipping = widget.flip.status.isAnimating;
+
+  void _onStatus(AnimationStatus status) {
+    if (status.isAnimating != _flipping) {
+      setState(() => _flipping = status.isAnimating);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.flip.addStatusListener(_onStatus);
+  }
+
+  @override
+  void didUpdateWidget(_IgnoreWhileFlipping oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.flip != widget.flip) {
+      oldWidget.flip.removeStatusListener(_onStatus);
+      widget.flip.addStatusListener(_onStatus);
+      _flipping = widget.flip.status.isAnimating;
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.flip.removeStatusListener(_onStatus);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      IgnorePointer(ignoring: _flipping, child: widget.child);
+}
+
+/// Passes on [source]'s notifications only while a screen reader (or other
+/// assistive technology) is on, and once more when one turns on, so the
+/// semantics grid costs nothing for everyone else.
+class _SemanticsChanges extends ChangeNotifier {
+  _SemanticsChanges(this.source) {
+    source.addListener(_onSource);
+    SemanticsBinding.instance.addSemanticsEnabledListener(_onEnabled);
+  }
+
+  final Listenable source;
+
+  bool get _enabled => SemanticsBinding.instance.semanticsEnabled;
+
+  void _onSource() {
+    if (_enabled) notifyListeners();
+  }
+
+  void _onEnabled() {
+    if (_enabled) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    source.removeListener(_onSource);
+    SemanticsBinding.instance.removeSemanticsEnabledListener(_onEnabled);
+    super.dispose();
   }
 }

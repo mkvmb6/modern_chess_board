@@ -137,6 +137,12 @@ class BoardKeyboard {
   /// plain letters always type a move.
   final ValueNotifier<bool> navigationMode = ValueNotifier(false);
 
+  /// Notifies when [typed] or [navigationMode] changes.
+  late final Listenable statusChanges = Listenable.merge([
+    typed,
+    navigationMode,
+  ]);
+
   bool get _navigating => navigationMode.value || actions.navigationLocked();
 
   /// Where the cursor first appears: the e-file, second rank from the side

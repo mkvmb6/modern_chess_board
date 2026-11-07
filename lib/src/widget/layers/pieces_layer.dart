@@ -65,6 +65,8 @@ class PiecesLayer extends StatelessWidget {
     final set = pieceSet;
     if (set == null) return const SizedBox.expand();
     return ListenableBuilder(
+      // Built only when the board itself rebuilds, which interactions
+      // never cause, so a fresh merge here is cheap.
       listenable: Listenable.merge([positionChanges, hiddenSquares, ?flip]),
       builder: (context, _) => Stack(
         clipBehavior: Clip.none,

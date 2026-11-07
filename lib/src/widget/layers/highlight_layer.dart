@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import '../board_geometry.dart';
@@ -31,7 +32,10 @@ class BoardTintsPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(BoardTintsPainter old) =>
-      old.geometry != geometry || old.highlights != highlights;
+      old.geometry != geometry ||
+      old.highlights.hover != highlights.hover ||
+      old.highlights.hoverColor != highlights.hoverColor ||
+      !mapEquals(old.highlights.tints, highlights.tints);
 }
 
 /// Paints legal-destination markers: a small dot on an empty square, a ring
@@ -104,5 +108,9 @@ class BoardMarkersPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(BoardMarkersPainter old) =>
-      old.geometry != geometry || old.highlights != highlights;
+      old.geometry != geometry ||
+      old.highlights.focus != highlights.focus ||
+      old.highlights.focusColor != highlights.focusColor ||
+      old.highlights.markerColor != highlights.markerColor ||
+      !mapEquals(old.highlights.markers, highlights.markers);
 }
