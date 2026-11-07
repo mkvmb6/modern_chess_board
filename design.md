@@ -11,9 +11,9 @@ This document describes how the package meets `requirements.md`. Section referen
 | State | `ChangeNotifier` controller plus internal widget state | No third-party state library. Apps don't need to wire listeners (R6). |
 | Rendering | `CustomPainter` layers inside a `Stack` | Each layer repaints on its own, so selection, hover and drag don't rebuild all 64 squares (R14). |
 | Property tests | `glados` 1.1.7 (dev only) | Random legal games, with shrinking on failure. |
-| SDK | Dart `>=3.5.0 <4.0.0`, Flutter `>=3.24.0` | Wide enough for most apps. Developed on Flutter 3.47.7. |
+| SDK | Dart `^3.11.0`, Flutter `>=3.41.0` | The minimum required by `flutter_svg` 2.3.2. Developed on Flutter 3.47.7. |
 
-All dependency versions are pinned exactly in `pubspec.yaml`.
+Runtime dependencies use caret ranges (`^0.8.1`, `^2.3.2`), because exact pins in a published library cause version conflicts for apps and `pub publish` warns about them. Dev dependencies are pinned exactly.
 
 ## 2. Package layout
 
@@ -289,7 +289,7 @@ abstract class PieceSet {
 - They are 100x100, about 105 KB in total, and use only paths, linear and radial gradients, and clip paths.
 - They are copied unchanged into `assets/pieces/default/`. Gradient IDs are already unique per piece (prefixed with `wK-` and so on), so no conflicts arise.
 - The `<title>` and `aria-label` attributes are ignored by `flutter_svg`; semantics come from the widget.
-- Their license must be confirmed before publishing (see Open questions).
+- They are the package author's own work and ship under the package's MIT license.
 
 ## 8. Labels
 

@@ -1,0 +1,42 @@
+name: modern_chess_board
+description: >-
+  Interactive, customizable chess board widget with legal moves, drag and
+  tap input, animations, arrows, premoves, themes and piece sets.
+version: 0.1.0
+homepage: https://github.com/OWNER/modern_chess_board
+repository: https://github.com/OWNER/modern_chess_board
+issue_tracker: https://github.com/OWNER/modern_chess_board/issues
+topics:
+  - chess
+  - board
+  - game
+  - widget
+  - ui
+
+environment:
+  sdk: ^3.11.0
+  flutter: ">=3.41.0"
+
+platforms:
+  android:
+  ios:
+  linux:
+  macos:
+  web:
+  windows:
+
+dependencies:
+  chess: ^0.8.1
+  flutter:
+    sdk: flutter
+  flutter_svg: ^2.3.2
+
+dev_dependencies:
+  flutter_lints: 6.0.0
+  flutter_test:
+    sdk: flutter
+  glados: 1.1.7
+
+flutter:
+  assets:
+    - assets/pieces/default/

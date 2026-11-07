@@ -4,7 +4,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
 
 ## Phase 0: Scaffold
 
-- [ ] 1. Create the package and tooling
+- [x] 1. Create the package and tooling
   - `flutter create --template=package modern_chess_board` in place. Keep `requirements.md`, `design.md`, `tasks.md`, `svg/`.
   - Pin the dependencies: `chess: 0.8.1`, `flutter_svg: 2.3.2`; dev: `glados: 1.1.7`, `flutter_lints` (latest stable, pinned).
   - Set the SDK constraints, `platforms:` (all 6), `topics:`, `description`, and placeholder `homepage`/`repository`/`issue_tracker`.

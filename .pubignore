@@ -1,0 +1,27 @@
+# .pubignore replaces .gitignore for publishing, so repeat its entries.
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
+*.iml
+*.ipr
+*.iws
+.idea/
+pubspec.lock
+doc/api/
+.dart_tool/
+.flutter-plugins-dependencies
+build/
+coverage/
+# Development-only files.
+svg/
+requirements.md
+design.md
+tasks.md
+test/golden/failures/
