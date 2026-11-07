@@ -60,7 +60,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
 
 ## Phase 3: Static board
 
-- [ ] 9. Geometry and layout
+- [x] 9. Geometry and layout
   - `BoardGeometry` (square to offset and offset to square, both orientations, flip interpolation). `LayoutBuilder` sizing with an unbounded-constraint fallback.
   - Tests: round trip of all 64 squares in both orientations; widget is square under wide, tall and unbounded constraints.
   - _Req 1, 9. Design 5.2_

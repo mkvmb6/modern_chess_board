@@ -31,3 +31,4 @@ export 'src/pieces/piece_set.dart'
 export 'src/sound/chess_sound_pack.dart' show ChessSoundPack, SilentSoundPack;
 export 'src/theme/chess_board_theme.dart'
     show AnnotationColors, ChessBoardTheme;
+export 'src/widget/board_geometry.dart' show BoardOrientation, CoordinateMode;
