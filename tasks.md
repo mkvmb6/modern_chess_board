@@ -42,10 +42,10 @@ Each task is written test-first: write the failing tests, implement, then run `f
 
 ## Phase 2: Theme, pieces, sound
 
-- [ ] 6. Theme
+- [x] 6. Theme
   - `ChessBoardTheme` with every color, `copyWith` with clear flags, `==`/`hashCode`, 5 presets.
   - Contrast helper used for automatic label color.
-  - Tests: equality, copyWith round trip, clearing optional colors, each preset distinct, 3:1 contrast check for markers on both square colors.
+  - Tests: equality, copyWith round trip, clearing optional colors, each preset distinct, legibility on both square colors (contrast for small marks, perceptual distance for tints and arrows, pairwise tint distance), label tone, lerp.
   - _Req 7. Design 6_
 
 - [ ] 7. Piece sets

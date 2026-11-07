@@ -26,7 +26,7 @@ modern_chess_board/
                     square_mark.dart, game_status.dart, sound_event.dart
       controller/   chess_board_controller.dart, history.dart,
                     move_classifier.dart, notation.dart
-      theme/        chess_board_theme.dart, presets.dart
+      theme/        chess_board_theme.dart (with presets), color_math.dart
       pieces/       piece_set.dart, svg_piece_set.dart, piece_preloader.dart
       widget/       chess_board.dart, board_state.dart, board_geometry.dart,
                     interaction/ (tap, drag, premove, annotation_drawing, keyboard)
@@ -259,7 +259,7 @@ In `didUpdateWidget`, when `oldWidget.controller != widget.controller`, the boar
 
 ## 6. Theming (`src/theme`)
 
-`ChessBoardTheme` is `@immutable` and holds every color in R7, plus `premoveColor`, `focusColor`, `arrowColor` and the four annotation colors. It provides value `==` and `hashCode`, and `copyWith`.
+`ChessBoardTheme` is `@immutable` and holds every color in R7, plus hover, premove, focus, app arrow and mark defaults, the four user-annotation colors, the outside-label margin and its labels, and the promotion picker background and scrim. It provides value `==` and `hashCode`, `copyWith`, and `lerp` for animated theme changes.
 
 Optional colors (`checkColor`, `labelColor`) are cleared through sentinel flags:
 
@@ -269,7 +269,7 @@ theme.copyWith(clearCheckColor: true)
 
 This is explicit and avoids the ambiguity of a nullable-of-nullable parameter.
 
-Presets: `green` (the default), `brown`, `blue`, `purple`, `monochrome`. Each one gets a golden test, plus a contrast unit test that requires a ratio of at least 3:1 for markers against both square colors.
+Presets: `green` (the default), `brown`, `blue`, `purple`, `monochrome`. Each one gets a golden test, plus legibility tests on both square colors, using two measures. Small marks (legal dots, drag frame, focus ring) need a luminance contrast of at least 1.6. Whole-square tints and arrows are measured by perceptual distance (CIE76 delta E), because a hue shift such as yellow over cream is visible even at low luminance contrast: at least 15 for tints, 25 for arrows, and 12 between any two highlight tints so they never look alike. Automatic labels need contrast 3 and keep the opposite square's tone where possible. The purple preset uses a teal hint arrow, because blue blends into its violet dark squares.
 
 `resolveTheme(widget)` applies the shortcut parameters on top of the theme. Theme changes only repaint the layers; ephemeral state is untouched (R7).
 
