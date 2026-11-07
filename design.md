@@ -212,9 +212,10 @@ A user can move when all of these hold:
 ### 5.5 Premoves
 
 - Allowed when `enablePremoves` is on, `interactiveSide` is a single color, and that color is not to move.
-- Premove destinations are a relaxed pseudo-legal set: the move is computed on a copy of the engine with the turn flipped, so it ignores whose turn it is but keeps piece movement geometry.
-- One premove is stored and painted with `theme.premoveColor`. Tapping anywhere that is not a valid premove destination cancels it.
-- On `MoveApplied(source: code)`, after the animation is scheduled, the board calls `controller.move(...)` with the premove. If it is illegal, the premove is discarded silently.
+- Premove destinations follow how the piece moves, not the current position, because the opponent's move will change it: sliders reach to the edge through other pieces, pawns may premove a diagonal capture onto an empty square, and squares held by the user's own pieces count (so a recapture can be queued, and a king can castle onto its rook). Castling squares come from the castling rights still held. Legality is checked when the premove is played. Destinations are cached per position and square.
+- One premove is stored and painted with `theme.premoveColor`. Any press that doesn't queue a new premove cancels it.
+- On a single `MoveApplied` notification, the premove is played in a microtask, so every other controller listener sees the opponent's move first. It lands without its own slide, leaving the opponent's move animating unless the two touch the same squares. If it is illegal, it is discarded silently. Promotion premoves become a queen. Any other change (undo, navigation, load, coalesced changes) drops it.
+- A selection or drag of a piece that still stands where it did carries over the opponent's move, so a premove drag in progress becomes an ordinary move.
 
 ### 5.6 User annotations
 

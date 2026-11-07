@@ -22,6 +22,7 @@ import 'interaction/annotation_drawing.dart';
 import 'interaction/board_gesture_layer.dart';
 import 'interaction/board_interaction.dart';
 import 'interaction/drag_layer.dart';
+import 'interaction/premove.dart';
 import 'layers/arrows_layer.dart';
 import 'layers/drag_feedback_layer.dart';
 import 'layers/highlight_layer.dart';
@@ -58,6 +59,7 @@ class ChessBoard extends StatefulWidget {
     this.coordinates = CoordinateMode.inside,
     this.readOnly = false,
     this.interactiveSide = InteractiveSide.both,
+    this.enablePremoves = false,
     this.autoQueen = false,
     this.promotionPickerBuilder,
     this.onMove,
@@ -117,6 +119,20 @@ class ChessBoard extends StatefulWidget {
   /// Which colors the user may move, for example only black when the app
   /// plays white. Defaults to both.
   final InteractiveSide interactiveSide;
+
+  /// Whether the user can queue a move on the opponent's turn, as on chess
+  /// sites. Needs [interactiveSide] to be a single color.
+  ///
+  /// A premove is made by tap or drag like a move, shown in
+  /// [ChessBoardTheme.premoveColor], and played as soon as the opponent's
+  /// move arrives through the controller, if it is legal then; otherwise it
+  /// is dropped without a sound. Pressing anywhere that isn't a premove
+  /// destination cancels it. [onMove] reports a premove when it is played,
+  /// not when it is queued. A premoved promotion always becomes a queen,
+  /// whatever [autoQueen] says, since there is no time to ask. Premoves may
+  /// target squares the user's own pieces hold, so a recapture can be
+  /// queued. Off by default.
+  final bool enablePremoves;
 
   /// When true, pawns reaching the last rank become queens without asking.
   final bool autoQueen;
@@ -307,6 +323,92 @@ class _ChessBoardState extends State<ChessBoard>
   /// The hint arrow being shown, or null once dismissed.
   final ValueNotifier<Arrow?> _hint = ValueNotifier(null);
 
+  /// The queued premove, or null.
+  final ValueNotifier<Premove?> _premove = ValueNotifier(null);
+
+  /// Queues a premove. Promotion premoves become a queen when played.
+  bool _queuePremove(Square from, Square to) {
+    final piece = widget.controller.pieceAt(from);
+    if (piece == null) return false;
+    _premove.value = Premove(from: from, to: to, color: piece.color);
+    return true;
+  }
+
+  void _cancelPremove() => _premove.value = null;
+
+  /// Plays the queued premove after the opponent's move [id], once every
+  /// listener has seen that move: the app's own listeners (an engine, a
+  /// clock) get the opponent's move first, then the premove as its own
+  /// change.
+  void _schedulePremove(int id) {
+    final p = _premove.value;
+    if (p == null) return;
+    scheduleMicrotask(() {
+      if (!mounted || widget.controller.changeId != id || _premove.value != p) {
+        return;
+      }
+      _playPremove();
+    });
+  }
+
+  /// Set while a premove is played, so it lands without its own slide and
+  /// leaves the opponent's move animating.
+  bool _playingPremove = false;
+
+  /// Plays the queued premove now that it is its side's turn. An illegal
+  /// premove is dropped quietly.
+  void _playPremove() {
+    final p = _premove.value;
+    if (p == null) return;
+    final c = widget.controller;
+    if (c.turn != p.color) return;
+    _premove.value = null;
+    if (!_interaction.canMove(p.color) || c.pieceAt(p.from)?.color != p.color) {
+      return;
+    }
+    final target = _interaction.resolveTarget(p.from, p.to);
+    if (target == null) return;
+    _playingPremove = true;
+    try {
+      applyUserMove(c, p.from, target, promotion: PieceType.queen);
+    } finally {
+      _playingPremove = false;
+    }
+  }
+
+  /// Keeps the user's selection, press and drag across the opponent's move
+  /// when their piece still stands where it did and can still be moved, so
+  /// a premove selection or drag carries on as an ordinary move. Anything
+  /// else (undo, loading, the piece taken) drops them.
+  void _carryInputOver(Map<Square, Piece> before, {required bool moved}) {
+    final c = widget.controller;
+    bool kept(Square s) =>
+        moved &&
+        before[s] != null &&
+        before[s] == c.pieceAt(s) &&
+        _canDragFrom(s);
+    final selected = _interaction.selection.value;
+    if (selected != null && kept(selected)) {
+      _interaction.revalidate();
+    } else {
+      _interaction.clear();
+    }
+    final origin = _pressOrigin;
+    final drag = _drag.value;
+    if (drag != null && kept(drag.from)) {
+      // The squares it can drop on changed with the position.
+      if (_lastGeometry case final g?) {
+        _updateDropTarget(drag.from, drag.position, g);
+      }
+      return;
+    }
+    // A drag from the old position can't land in the new one.
+    _cancelDrag();
+    if (drag == null && origin != null && kept(origin.$1)) {
+      _pressOrigin = origin;
+    }
+  }
+
   /// Arrows and circles the user drew.
   final UserAnnotations _userDrawings = UserAnnotations();
 
@@ -428,18 +530,34 @@ class _ChessBoardState extends State<ChessBoard>
           _positionChanges,
           _interaction.selection,
           _hover,
+          _premove,
         ]),
-        builder: (context, _) => CustomPaint(
-          painter: painter(
-            BoardHighlights.compute(
-              controller: widget.controller,
-              selected: _interaction.selection.value,
-              hover: _hover.value,
-              showLastMove: widget.showLastMove,
-              theme: theme,
+        builder: (context, _) {
+          final selected = _interaction.selection.value;
+          final piece = selected == null
+              ? null
+              : widget.controller.pieceAt(selected);
+          final premoving =
+              piece != null && _interaction.canPremove(piece.color);
+          final queued = _premove.value;
+          return CustomPaint(
+            painter: painter(
+              BoardHighlights.compute(
+                controller: widget.controller,
+                selected: selected,
+                hover: _hover.value,
+                showLastMove: widget.showLastMove,
+                theme: theme,
+                premove: queued == null
+                    ? null
+                    : (from: queued.from, to: queued.to),
+                premoveTargets: premoving
+                    ? _interaction.targetsFrom(selected!)
+                    : null,
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     ),
   );
@@ -455,6 +573,8 @@ class _ChessBoardState extends State<ChessBoard>
     _interaction = BoardInteraction(
       controller: widget.controller,
       onMove: _requestMove,
+      onPremove: _queuePremove,
+      enablePremoves: widget.enablePremoves,
       readOnly: widget.readOnly,
       interactiveSide: widget.interactiveSide,
     );
@@ -540,7 +660,13 @@ class _ChessBoardState extends State<ChessBoard>
     _interaction
       ..readOnly = widget.readOnly
       ..interactiveSide = widget.interactiveSide
+      ..enablePremoves = widget.enablePremoves
       ..revalidate();
+    // Turning premoves off, making the board read-only or changing sides
+    // drops a queued premove.
+    if (_premove.value case final p? when !_interaction.canPremove(p.color)) {
+      _cancelPremove();
+    }
     if (_drag.value case final d? when !_canDragFrom(d.from)) _cancelDrag();
     _revalidatePromotion();
     if (!widget.enableUserAnnotations && oldWidget.enableUserAnnotations) {
@@ -587,6 +713,7 @@ class _ChessBoardState extends State<ChessBoard>
     _cancelDrag();
     _dismissHint();
     _clearUserDrawings(cancelDrawing: true);
+    _cancelPremove();
   }
 
   /// Reports the change just seen to [ChessBoard.onMove] and
@@ -619,6 +746,25 @@ class _ChessBoardState extends State<ChessBoard>
     final change = c.lastChange;
     final dragged = _dropping;
     _dropping = false;
+    if (_playingPremove) {
+      // The premove lands at once; the user already chose where it goes.
+      // The opponent's move keeps sliding in, unless the premove touches
+      // its squares (a recapture, say), in which case it lands too.
+      final running = _animation.plan;
+      if (running != null) {
+        final touched = {
+          for (final s in Square.values)
+            if (before[s] != c.pieceAt(s)) s,
+        };
+        final animated = {
+          for (final m in running.moving) ...[m.from, m.to],
+          for (final f in running.fading) f.square,
+          for (final a in running.appearing) a.square,
+        };
+        if (touched.any(animated.contains)) _animation.finish();
+      }
+      return;
+    }
     // Several changes coalesced into one notification (for example a
     // silent move followed by a notified one) can't be shown as a single
     // slide from the position last drawn, so they snap.
@@ -657,9 +803,9 @@ class _ChessBoardState extends State<ChessBoard>
     if (id != _seenChangeId) {
       final previousId = _seenChangeId;
       _seenChangeId = id;
-      _interaction.clear();
-      // A drag from the old position can't land in the new one.
-      _cancelDrag();
+      final moved =
+          id == previousId + 1 && widget.controller.lastChange is MoveApplied;
+      _carryInputOver(_shownPieces, moved: moved);
       _cancelPromotion();
       // The hint was advice for the old position, so any change of
       // position retires it: a move, undo, navigation or a new game.
@@ -669,6 +815,15 @@ class _ChessBoardState extends State<ChessBoard>
       _planAnimation(previousId);
       _positionChanges.notify();
       _reportChange();
+      if (!mounted || widget.controller.changeId != id) return;
+      // The opponent's move arrived: play the queued premove. Any other
+      // change (undo, navigation, loading, several changes at once) leaves
+      // a position the premove wasn't made for, so it is dropped.
+      if (moved) {
+        _schedulePremove(id);
+      } else {
+        _cancelPremove();
+      }
     } else {
       _interaction.revalidate();
       if (_drag.value case final d? when !_canDragFrom(d.from)) _cancelDrag();
@@ -743,7 +898,7 @@ class _ChessBoardState extends State<ChessBoard>
 
   bool _canDragFrom(Square square) {
     final piece = widget.controller.pieceAt(square);
-    return piece != null && _interaction.canMove(piece.color);
+    return piece != null && _interaction.canSelect(piece.color);
   }
 
   bool _onPressDown(Square square, PointerDeviceKind kind) {
@@ -751,6 +906,9 @@ class _ChessBoardState extends State<ChessBoard>
     // dragged without showing twice.
     _animation.finish();
     final outcome = _interaction.pressDown(square);
+    // Any press that doesn't queue a new premove cancels the queued one,
+    // so the user can always take it back with a tap.
+    if (outcome != TapOutcome.premoved) _cancelPremove();
     // Only a press that leaves its piece selected can turn into a drag. A
     // press that made a move, or landed on nothing movable, can't.
     final dragsPiece =
@@ -794,7 +952,7 @@ class _ChessBoardState extends State<ChessBoard>
         ? null
         : DropTarget(
             square,
-            legal: _interaction.resolveTarget(from, square) != null,
+            legal: _interaction.resolveAny(from, square) != null,
           );
   }
 
@@ -861,6 +1019,7 @@ class _ChessBoardState extends State<ChessBoard>
     _dropTarget.dispose();
     _hintTimer?.cancel();
     _hint.dispose();
+    _premove.dispose();
     _userDrawings.dispose();
     _drawing.dispose();
     super.dispose();

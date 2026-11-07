@@ -42,15 +42,20 @@ class BoardHighlights {
   /// Works out the highlights.
   ///
   /// Each square gets at most one tint, picked in priority order: king in
-  /// check or checkmated, then the selection, then the last move. So a
-  /// selected square that is also part of the last move is tinted once,
-  /// with the selection color.
+  /// check or checkmated, then the selection, then a queued premove, then
+  /// the last move. So a selected square that is also part of the last
+  /// move is tinted once, with the selection color.
+  ///
+  /// When [premoveTargets] is given, the selected piece is being premoved:
+  /// those squares are marked instead of its legal moves.
   factory BoardHighlights.compute({
     required ChessBoardController controller,
     required Square? selected,
     required Square? hover,
     required bool showLastMove,
     required ChessBoardTheme theme,
+    ({Square from, Square to})? premove,
+    Set<Square>? premoveTargets,
   }) {
     final tints = <Square, Color>{};
     if (showLastMove) {
@@ -58,6 +63,10 @@ class BoardHighlights {
         tints[m.from] = theme.lastMoveColor;
         tints[m.to] = theme.lastMoveColor;
       }
+    }
+    if (premove != null) {
+      tints[premove.from] = theme.premoveColor;
+      tints[premove.to] = theme.premoveColor;
     }
     if (selected != null) tints[selected] = theme.selectionColor;
 
@@ -76,7 +85,16 @@ class BoardHighlights {
 
     final markers = <Square, LegalMarker>{};
     var hoverShown = false;
-    if (selected != null) {
+    if (selected != null && premoveTargets != null) {
+      for (final square in premoveTargets) {
+        // A ring where something stands: a capture, or castling onto the
+        // rook. A dot elsewhere.
+        markers[square] = controller.pieceAt(square) == null
+            ? LegalMarker.dot
+            : LegalMarker.ring;
+        if (square == hover) hoverShown = true;
+      }
+    } else if (selected != null) {
       for (final m in controller.legalMovesFrom(selected)) {
         markers[m.to] = m.isCapture ? LegalMarker.ring : LegalMarker.dot;
         if (m.to == hover) hoverShown = true;

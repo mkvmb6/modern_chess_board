@@ -4,6 +4,7 @@ import '../../controller/chess_board_controller.dart';
 import '../../model/board_move.dart';
 import '../../model/piece.dart';
 import '../../model/square.dart';
+import 'premove.dart';
 
 /// Which colors the user may move on the board.
 enum InteractiveSide {
@@ -48,6 +49,9 @@ enum TapOutcome {
   /// The selected piece moved to the pressed square.
   moved,
 
+  /// A premove was queued from the selected piece to the pressed square.
+  premoved,
+
   /// The pressed square was not a legal destination; the selection was
   /// cleared and nothing moved.
   illegal,
@@ -55,6 +59,9 @@ enum TapOutcome {
 
 /// Requests a user move from [from] to [to]. Returns whether it was made.
 typedef MoveRequest = bool Function(Square from, Square to);
+
+/// Queues a premove from [from] to [to]. Returns whether it was queued.
+typedef PremoveRequest = bool Function(Square from, Square to);
 
 /// The press-to-move rules and the current selection.
 ///
@@ -77,8 +84,10 @@ class BoardInteraction {
   BoardInteraction({
     required this.controller,
     required this.onMove,
+    this.onPremove,
     this.readOnly = false,
     this.interactiveSide = InteractiveSide.both,
+    this.enablePremoves = false,
   });
 
   /// The game being played.
@@ -93,6 +102,13 @@ class BoardInteraction {
   /// Which colors the user may move.
   InteractiveSide interactiveSide;
 
+  /// Whether the user may queue a move on the opponent's turn. Only takes
+  /// effect when [interactiveSide] is a single color.
+  bool enablePremoves;
+
+  /// Queues a premove the user asked for.
+  PremoveRequest? onPremove;
+
   /// The selected square, or null. Listen to this to paint the selection;
   /// it only notifies when the selection actually changes.
   final ValueNotifier<Square?> selection = ValueNotifier(null);
@@ -101,17 +117,89 @@ class BoardInteraction {
   /// deselect it.
   bool _pressedSelected = false;
 
-  /// Whether the user may move pieces of [color] right now.
-  bool canMove(PieceColor color) =>
+  /// Whether the user may move pieces of [color] right now: the board is
+  /// interactive, it is that side's turn, and the game is live.
+  bool canMove(PieceColor color) => _canPlay(color) && color == controller.turn;
+
+  /// Whether the user may queue a premove for pieces of [color]: premoves
+  /// are on, the user plays exactly one side, and it is the other side's
+  /// turn.
+  bool canPremove(PieceColor color) =>
+      enablePremoves &&
+      onPremove != null &&
+      _canPlay(color) &&
+      interactiveSide != InteractiveSide.both &&
+      color != controller.turn;
+
+  /// Whether the user may select (and drag) pieces of [color]: to move them
+  /// now or to premove them.
+  bool canSelect(PieceColor color) => canMove(color) || canPremove(color);
+
+  bool _canPlay(PieceColor color) =>
       !readOnly &&
       interactiveSide.allows(color) &&
-      color == controller.turn &&
       !controller.isGameOver &&
-      (!controller.isViewingHistory || controller.allowBranching);
+      // Premoves wait for the opponent's next move, so they only make sense
+      // at the end of the game; moving from history needs branching.
+      (!controller.isViewingHistory ||
+          (controller.allowBranching && color == controller.turn));
 
   bool _canSelect(Square square) {
     final piece = controller.pieceAt(square);
-    return piece != null && canMove(piece.color);
+    return piece != null && canSelect(piece.color);
+  }
+
+  /// Squares the piece on [from] can go to now (its legal moves) or, on the
+  /// opponent's turn, be premoved to. Empty for pieces the user can't
+  /// select.
+  Set<Square> targetsFrom(Square from) {
+    final piece = controller.pieceAt(from);
+    if (piece == null) return const {};
+    if (canMove(piece.color)) {
+      return {for (final m in controller.legalMovesFrom(from)) m.to};
+    }
+    if (canPremove(piece.color)) return _premoveTargets(from);
+    return const {};
+  }
+
+  /// [premoveDestinations], worked out once per position and square, since
+  /// hover and drag ask for it on every pointer move.
+  (ChessBoardController, int, Square, Set<Square>)? _premoveCache;
+
+  Set<Square> _premoveTargets(Square from) {
+    final cached = _premoveCache;
+    if (cached != null &&
+        identical(cached.$1, controller) &&
+        cached.$2 == controller.changeId &&
+        cached.$3 == from) {
+      return cached.$4;
+    }
+    final targets = premoveDestinations(controller, from);
+    _premoveCache = (controller, controller.changeId, from, targets);
+    return targets;
+  }
+
+  /// The square the user means when moving the piece on [from] to [to]:
+  /// the legal destination on the user's turn ([resolveTarget]), or a
+  /// premove destination on the opponent's. Null if neither.
+  Square? resolveAny(Square from, Square to) {
+    final piece = controller.pieceAt(from);
+    if (piece == null) return null;
+    if (canMove(piece.color)) return resolveTarget(from, to);
+    if (canPremove(piece.color) && _premoveTargets(from).contains(to)) {
+      return to;
+    }
+    return null;
+  }
+
+  TapOutcome _act(Square from, Square to) {
+    final piece = controller.pieceAt(from);
+    if (piece != null && canMove(piece.color)) {
+      return onMove(from, to) ? TapOutcome.moved : TapOutcome.illegal;
+    }
+    return (onPremove?.call(from, to) ?? false)
+        ? TapOutcome.premoved
+        : TapOutcome.illegal;
   }
 
   /// The legal destination meant by the user moving the piece on [from] to
@@ -154,10 +242,10 @@ class BoardInteraction {
     }
     // A legal destination wins over switching, so captures and castling by
     // moving the king onto its own rook work.
-    final target = resolveTarget(selected, square);
+    final target = resolveAny(selected, square);
     if (target != null) {
       selection.value = null;
-      return onMove(selected, target) ? TapOutcome.moved : TapOutcome.illegal;
+      return _act(selected, target);
     }
     if (_canSelect(square)) {
       selection.value = square;
@@ -187,10 +275,10 @@ class BoardInteraction {
   TapOutcome drop(Square from, Square to) {
     clear();
     final piece = controller.pieceAt(from);
-    if (piece == null || !canMove(piece.color)) return TapOutcome.ignored;
-    final target = resolveTarget(from, to);
+    if (piece == null || !canSelect(piece.color)) return TapOutcome.ignored;
+    final target = resolveAny(from, to);
     if (target == null) return TapOutcome.illegal;
-    return onMove(from, target) ? TapOutcome.moved : TapOutcome.illegal;
+    return _act(from, target);
   }
 
   /// A whole tap: a press that ends without dragging. Used by tests and by
