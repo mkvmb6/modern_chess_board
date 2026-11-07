@@ -302,6 +302,9 @@ class ChessBoardController extends ChangeNotifier {
     _changed(PositionReplaced(silent: !notify), notify);
   }
 
+  /// Whether [fen] describes a position [loadFen] would accept.
+  static bool isValidFen(String fen) => _isLegalPosition(fen, into: ch.Chess());
+
   /// Starts a new game from [fen].
   ///
   /// Returns false, and leaves the current game unchanged, if [fen] is

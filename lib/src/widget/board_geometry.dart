@@ -210,8 +210,9 @@ class BoardMetrics {
   ///
   /// Label text follows [textScaler], but never grows beyond what fits: a
   /// third of a square inside the board, or 4% of the side in the margin.
-  /// Labels are hidden when even the 9px minimum doesn't fit, which only
-  /// happens on boards around 100px or smaller.
+  /// Labels are hidden when even the 9px minimum doesn't fit without
+  /// crowding the pieces: inside labels below about 160px, outside labels
+  /// on boards around 100px or smaller.
   factory BoardMetrics.forSide(
     double side,
     CoordinateMode coordinates, {
@@ -239,7 +240,9 @@ class BoardMetrics {
           margin: 0,
           labelFontSize: font,
           coordinates: coordinates,
-          showLabels: square >= font * 1.5,
+          // Below about 2.2 font sizes per square, corner labels crowd the
+          // pieces; hide them rather than overlap.
+          showLabels: square >= font * 2.2,
         );
       case CoordinateMode.outside:
         final base = math.max(kMinLabelFontSize, s * 0.022);

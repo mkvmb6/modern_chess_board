@@ -65,7 +65,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Tests: round trip of all 64 squares in both orientations; widget is square under wide, tall and unbounded constraints.
   - _Req 1, 9. Design 5.2_
 
-- [ ] 10. Squares, pieces and labels layers
+- [x] 10. Squares, pieces and labels layers
   - `ChessBoard` widget with defaults, `initialFen` applied once (invalid throws `ArgumentError`), `SquaresLayer`, `PiecesLayer`, `LabelsLayer` (inside, outside, none), theme shortcut parameters, piece preloading without flicker.
   - Tests: the start position renders 32 pieces in the right squares in both orientations; a later `initialFen` change is ignored; all three label modes at 400 px and 120 px with font size ≥ 9; outside mode fits the constraints; shortcut colors override the theme.
   - Golden tests: 5 themes x 3 label modes.

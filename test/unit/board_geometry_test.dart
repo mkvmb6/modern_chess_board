@@ -229,12 +229,12 @@ void main() {
     });
 
     test('inside labels fit their squares and hide on tiny boards', () {
-      for (final side in [120.0, 200.0, 400.0, 1200.0]) {
+      for (final side in [160.0, 200.0, 400.0, 1200.0]) {
         final m = BoardMetrics.forSide(side, CoordinateMode.inside);
         expect(m.showLabels, isTrue, reason: '$side');
         expect(m.labelFontSize, lessThanOrEqualTo(m.squareSize / 1.5));
       }
-      for (final side in [40.0, 80.0]) {
+      for (final side in [40.0, 80.0, 120.0, 140.0]) {
         expect(
           BoardMetrics.forSide(side, CoordinateMode.inside).showLabels,
           isFalse,

@@ -142,7 +142,9 @@ ChessBoard({
 })
 ```
 
-An `initialFen` is applied once, in `initState`, through `controller.loadFen(notify: false)`. An invalid value triggers an `ArgumentError` with the bad FEN in the message. Later changes to `initialFen` are ignored, as R1 requires.
+An `initialFen` is applied once, in `initState`, through `controller.loadFen(notify: false)`, and only when the controller is still untouched: no changes yet and at the standard start. Remounting the board, or giving the same controller to a second board, therefore never wipes a game in progress. An invalid value triggers an `ArgumentError` with the bad FEN in the message every time. Later changes to `initialFen` are ignored, as R1 requires. `ChessBoardController(fen: ...)` is the preferred way to start from a position.
+
+Labels inherit the app font family from `DefaultTextStyle`; size, weight 600 and line height are the board's own. Outside labels use the ambient text colour at 72% opacity unless the theme sets a margin colour. Flutter's red "missing Material" debug style is detected and never copied. Golden tests load Roboto from `test/fonts` in `flutter_test_config.dart` and are tagged `golden`. They are generated on Windows; other OSes run `flutter test --exclude-tags golden`.
 
 ### 5.2 Layout and geometry
 
