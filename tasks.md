@@ -78,13 +78,13 @@ Each task is written test-first: write the failing tests, implement, then run `f
 
 ## Phase 4: Interaction
 
-- [ ] 12. Pointer state machine and tap to move
+- [x] 12. Pointer state machine and tap to move
   - Raw `Listener` state machine, selection notifier, legal-move cache per FEN, movability rules (read-only, game over, history view, interactive side, turn).
   - Tests: every tap rule in R2; tapping an empty square with nothing selected causes no rebuild (`debugBuildCount`); read-only, game over, history view and interactive side each block moves while code moves still work; a controller swap clears the selection.
   - _Req 1, 2. Design 5.4_
 
 - [ ] 13. Drag and drop
-  - Drag threshold, floating piece (scale cap, touch lift), empty source square, drop legal/illegal/off board/cancel, grab and grabbing cursors.
+  - Drag threshold, floating piece (scale cap, touch lift), empty source square, drop legal/illegal/off board/cancel, grab and grabbing cursors. Claim the gesture arena once a press starts on a movable piece, so a board inside a scroll view never scrolls during a drag (raw `Listener` events never enter the arena).
   - Tests: a movement below the threshold counts as a tap; an illegal drop snaps back with the position unchanged; dragging replaces the tap selection; the source square is empty during the drag; scale ≤ 1.15 and overflow ≤ 4 px at 120 px board; cursor values from `MouseRegion`; a controller swap cancels an in-progress drag.
   - _Req 2, 3. Design 5.4_
 
@@ -142,7 +142,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
 ## Phase 8: Advanced input
 
 - [ ] 23. Premoves
-  - Queue by tap or drag on the opponent's turn, premove highlight, cancel, auto-play on the opponent's move, silent discard if illegal.
+  - Queue by tap or drag on the opponent's turn, premove highlight, cancel, auto-play on the opponent's move, silent discard if illegal. Split `BoardInteraction.canMove` into a selectable check (no turn check when premoves are on) and a can-move-now check, with premove destinations as a second source of targets.
   - Tests: queue, cancel, play when legal, discard when illegal, unavailable when `interactiveSide` is both or premoves are off; a controller swap drops a queued premove.
   - _Req 12. Design 5.5_
 
@@ -159,7 +159,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - _Req 10. Design 9_
 
 - [ ] 26. Semantics
-  - Semantics grid with labels, selected state, legal hint, activate-to-move, announcements, text scaling.
+  - Semantics grid with labels, selected state, legal hint, activate-to-move, announcements, text scaling. Activation goes through `BoardInteraction.tap`, the same rules as pointer presses; the full-board gesture `Listener` does not handle screen-reader taps.
   - Tests: `find.bySemanticsLabel('e4, white pawn')` after 1.e4; `tester.semantics.tap` plays a move; announcement captured through the `SystemChannels.accessibility` mock; text scale 2.0 keeps labels inside their squares.
   - _Req 11. Design 10_
 

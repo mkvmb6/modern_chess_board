@@ -33,3 +33,4 @@ export 'src/theme/chess_board_theme.dart'
     show AnnotationColors, ChessBoardTheme;
 export 'src/widget/board_geometry.dart' show BoardOrientation, CoordinateMode;
 export 'src/widget/chess_board.dart' show ChessBoard;
+export 'src/widget/interaction/board_interaction.dart' show InteractiveSide;

@@ -2,9 +2,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import '../controller/chess_board_controller.dart';
+import '../model/piece.dart';
+import '../model/square.dart';
 import '../pieces/piece_set.dart';
 import '../theme/chess_board_theme.dart';
 import 'board_geometry.dart';
+import 'interaction/board_gesture_layer.dart';
+import 'interaction/board_interaction.dart';
 import 'layers/labels_layer.dart';
 import 'layers/pieces_layer.dart';
 import 'layers/squares_layer.dart';
@@ -34,6 +38,8 @@ class ChessBoard extends StatefulWidget {
     this.checkmateColor,
     this.pieceSet = PieceSet.standard,
     this.coordinates = CoordinateMode.inside,
+    this.readOnly = false,
+    this.interactiveSide = InteractiveSide.both,
   });
 
   /// The game shown on the board.
@@ -72,6 +78,14 @@ class ChessBoard extends StatefulWidget {
   /// Where coordinate labels go.
   final CoordinateMode coordinates;
 
+  /// When true, the user can't move pieces in any way. Moves made through
+  /// the controller still show.
+  final bool readOnly;
+
+  /// Which colors the user may move, for example only black when the app
+  /// plays white. Defaults to both.
+  final InteractiveSide interactiveSide;
+
   /// The theme with the shortcut color parameters applied.
   ChessBoardTheme get effectiveTheme =>
       lightSquareColor == null &&
@@ -88,7 +102,19 @@ class ChessBoard extends StatefulWidget {
   State<ChessBoard> createState() => _ChessBoardState();
 }
 
-class _ChessBoardState extends State<ChessBoard> {
+/// Test-only view of the board's state.
+@visibleForTesting
+abstract interface class BoardStateDebug {
+  /// The selected square, or null.
+  Square? get debugSelection;
+}
+
+/// How many times any board's main build ran. Tests use it to check that an
+/// input which changes nothing doesn't rebuild the board.
+@visibleForTesting
+int debugBoardBuildCount = 0;
+
+class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
   /// The set currently drawn. Stays on the previous set while a new one
   /// loads, and is null only before the first set is ready.
   PieceSet? _shownSet;
@@ -97,10 +123,27 @@ class _ChessBoardState extends State<ChessBoard> {
   /// request.
   PieceSet? _loadingSet;
 
+  late final BoardInteraction _interaction;
+
+  /// The controller change last handled, so rebuilds alone don't clear
+  /// the selection.
+  int _seenChangeId = -1;
+
+  /// Tells the pieces layer the position changed.
+  final _ChangeSignal _positionChanges = _ChangeSignal();
+
   @override
   void initState() {
     super.initState();
     _applyInitialFen();
+    _interaction = BoardInteraction(
+      controller: widget.controller,
+      onMove: _requestMove,
+      readOnly: widget.readOnly,
+      interactiveSide: widget.interactiveSide,
+    );
+    _seenChangeId = widget.controller.changeId;
+    widget.controller.addListener(_onControllerChanged);
   }
 
   /// Loads [ChessBoard.initialFen] into a controller that hasn't been used
@@ -136,11 +179,19 @@ class _ChessBoardState extends State<ChessBoard> {
   void didUpdateWidget(ChessBoard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.controller != oldWidget.controller) {
+      oldWidget.controller.removeListener(_onControllerChanged);
       // A fresh controller for a new game gets the initial position too;
       // a controller already in use is left as it is.
       _applyInitialFen();
+      _interaction.controller = widget.controller;
+      _seenChangeId = widget.controller.changeId;
+      widget.controller.addListener(_onControllerChanged);
       _resetEphemeralState();
     }
+    _interaction
+      ..readOnly = widget.readOnly
+      ..interactiveSide = widget.interactiveSide
+      ..revalidate();
     if (widget.pieceSet != oldWidget.pieceSet &&
         widget.pieceSet != _loadingSet) {
       _load(widget.pieceSet);
@@ -151,7 +202,50 @@ class _ChessBoardState extends State<ChessBoard> {
   /// selection, drag, pending promotion, premove, hint, user drawings and
   /// running animations. Called when the controller is swapped. Later
   /// features add their state here rather than resetting it elsewhere.
-  void _resetEphemeralState() {}
+  void _resetEphemeralState() {
+    _interaction.clear();
+  }
+
+  /// The board's only controller listener. A changed position clears any
+  /// selection (it refers to the old position) and redraws the pieces.
+  /// Notifications that change no position, such as toggling
+  /// `allowBranching`, only recheck whether the selection is still valid.
+  void _onControllerChanged() {
+    final id = _interaction.controller.changeId;
+    if (id != _seenChangeId) {
+      _seenChangeId = id;
+      _interaction.clear();
+      _positionChanges.notify();
+    } else {
+      _interaction.revalidate();
+    }
+  }
+
+  bool _requestMove(Square from, Square to) => applyUserMove(
+    widget.controller,
+    from,
+    to,
+    // Promotion choice arrives with task 14; until then, promote to queen.
+    promotion: PieceType.queen,
+  );
+
+  void _onPressDown(Square square) => _interaction.pressDown(square);
+
+  void _onPressUp({required bool dragged}) =>
+      _interaction.pressUp(dragged: dragged);
+
+  void _onPressCancel() => _interaction.pressCancel();
+
+  @override
+  Square? get debugSelection => _interaction.selection.value;
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onControllerChanged);
+    _interaction.dispose();
+    _positionChanges.dispose();
+    super.dispose();
+  }
 
   void _load(PieceSet set) {
     _loadingSet = set;
@@ -187,6 +281,10 @@ class _ChessBoardState extends State<ChessBoard> {
 
   @override
   Widget build(BuildContext context) {
+    assert(() {
+      debugBoardBuildCount++;
+      return true;
+    }());
     final theme = widget.effectiveTheme;
     final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
     final ambientStyle = DefaultTextStyle.of(context).style;
@@ -247,8 +345,17 @@ class _ChessBoardState extends State<ChessBoard> {
             Positioned.fill(
               child: PiecesLayer(
                 controller: widget.controller,
+                positionChanges: _positionChanges,
                 geometry: geometry,
                 pieceSet: _shownSet,
+              ),
+            ),
+            Positioned.fill(
+              child: BoardGestureLayer(
+                geometry: geometry,
+                onPressDown: _onPressDown,
+                onPressUp: _onPressUp,
+                onPressCancel: _onPressCancel,
               ),
             ),
           ],
@@ -264,3 +371,8 @@ class _ChessBoardState extends State<ChessBoard> {
 bool _isFallbackStyle(TextStyle style) =>
     style.color == const Color(0xD0FF0000) &&
     style.decoration == TextDecoration.underline;
+
+/// A listenable that notifies on demand.
+class _ChangeSignal extends ChangeNotifier {
+  void notify() => notifyListeners();
+}

@@ -184,7 +184,7 @@ dragging
 secondary button down (mouse) → drawing
 ```
 
-The tap-select rules follow R2 exactly. The legal move list for each square is built once per position from `engine.moves({'verbose': true})` and cached, keyed by FEN (R14).
+The board acts when a press starts, as chess sites do, so nothing waits for the finger to lift. Pressing a movable piece selects it; pressing a legal destination makes the move; pressing another movable piece switches the selection; pressing anything else clears it. Pressing the already-selected piece deselects it on release, unless the press became a drag. The same tap tolerance (`kTouchSlop`) is used for every pointer kind, because the mouse's precise slop would turn a slightly jittery click into a drag. A second finger cancels the press. These rules follow R2 exactly and live in `BoardInteraction`, apart from the widget, so they are tested directly. The legal move list for each square is built once per position from `engine.moves({'verbose': true})` and cached, keyed by FEN (R14).
 
 A user can move when all of these hold:
 

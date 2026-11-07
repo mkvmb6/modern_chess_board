@@ -6,20 +6,28 @@ import '../board_geometry.dart';
 
 /// Shows the pieces of [controller]'s current position.
 ///
-/// Only this layer listens to the controller, so a move rebuilds the pieces
-/// and nothing else. While [pieceSet] is null (still loading) no pieces are
-/// shown, so they appear together instead of popping in one by one.
+/// Rebuilds when [positionChanges] notifies, which the board does once per
+/// controller change. The board, not this layer, listens to the controller,
+/// so it sees every change first (to clear a stale selection, and later to
+/// plan animations) and the controller has a single listener per board.
+///
+/// While [pieceSet] is null (still loading) no pieces are shown, so they
+/// appear together instead of popping in one by one.
 class PiecesLayer extends StatelessWidget {
   /// Creates the pieces layer.
   const PiecesLayer({
     super.key,
     required this.controller,
+    required this.positionChanges,
     required this.geometry,
     required this.pieceSet,
   });
 
   /// The game to show.
   final ChessBoardController controller;
+
+  /// Notifies when the position to show has changed.
+  final Listenable positionChanges;
 
   /// Where squares are.
   final BoardGeometry geometry;
@@ -32,7 +40,7 @@ class PiecesLayer extends StatelessWidget {
     final set = pieceSet;
     if (set == null) return const SizedBox.expand();
     return ListenableBuilder(
-      listenable: controller,
+      listenable: positionChanges,
       builder: (context, _) => Stack(
         clipBehavior: Clip.none,
         children: [
