@@ -241,7 +241,7 @@ The widget state holds `_activeHint`. On `didUpdateWidget`:
 - a different `hint` replaces the active one and restarts `hintTimeout`
 - a null `hint` clears it
 
-On any `MoveApplied`, `_activeHint` is cleared. The cleared hint is remembered by identity, so the same value passed in again isn't shown again until the app sets a new one. The hint never touches `arrows` (R5).
+On any change of position (`MoveApplied`, `NavigatedTo` or `PositionReplaced`, including several coalesced into one notification), `_activeHint` is cleared, since it was advice for a position no longer shown. The hint is compared by value, so an equal hint passed in again isn't shown until the app sets a different one (or null first). Changing `hintTimeout` while a hint shows restarts or stops its timer. The hint never touches `arrows` (R5).
 
 ### 5.9 Controller swap
 

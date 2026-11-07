@@ -130,7 +130,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
 
 ## Phase 7: Arrows and annotations
 
-- [ ] 21. App arrows, marks and hint
+- [x] 21. App arrows, marks and hint
   - Arrows layer under `IgnorePointer`, distinct hint style, hint lifecycle (cleared on move by user or code, cleared when the app sets null, replaced by a new hint, timeout), bad squares ignored.
   - Tests: taps go through arrows; arrows redraw after a list change and after a flip; each hint dismissal rule (timeout via `tester.pump(duration)`); `arrows` is never changed by the board; `Arrow('z9','e4')` doesn't crash; a controller swap clears the hint.
   - _Req 5. Design 5.8_

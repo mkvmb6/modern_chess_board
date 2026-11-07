@@ -76,7 +76,7 @@ Only legal moves are ever accepted. Legality must come from the rules engine's m
 - **Square marks:** the app can supply circled or tinted squares with optional colors, following the same rules as annotation arrows.
 - **Hint arrow:** the app can supply a single suggestion arrow (e.g. from an engine).
   - It must look clearly different from annotation arrows: different default color, and a different line and arrowhead style.
-  - It disappears automatically on the next successful move, whether made by the user or from code.
+  - It disappears automatically when the position changes: the next successful move (by the user or from code), an undo, history navigation or a newly loaded position.
   - It disappears when the app clears it, and a new hint replaces the old one.
   - It optionally disappears after a given duration, even if no move is made.
   - It never changes the app's annotation arrow list.

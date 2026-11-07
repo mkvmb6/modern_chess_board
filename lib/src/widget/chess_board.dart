@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -5,6 +7,7 @@ import 'package:flutter/widgets.dart';
 
 import '../controller/board_change.dart';
 import '../controller/chess_board_controller.dart';
+import '../model/annotations.dart';
 import '../model/board_move.dart';
 import '../model/game_status.dart';
 import '../model/piece.dart';
@@ -17,6 +20,7 @@ import 'board_geometry.dart';
 import 'interaction/board_gesture_layer.dart';
 import 'interaction/board_interaction.dart';
 import 'interaction/drag_layer.dart';
+import 'layers/arrows_layer.dart';
 import 'layers/drag_feedback_layer.dart';
 import 'layers/highlight_layer.dart';
 import 'layers/highlight_model.dart';
@@ -58,6 +62,10 @@ class ChessBoard extends StatefulWidget {
     this.onGameEnd,
     this.showLastMove = true,
     this.animationDuration = const Duration(milliseconds: 150),
+    this.arrows = const [],
+    this.marks = const [],
+    this.hint,
+    this.hintTimeout,
   });
 
   /// The game shown on the board.
@@ -135,6 +143,30 @@ class ChessBoard extends StatefulWidget {
   /// the piece. [Duration.zero] turns animation off, and so does the
   /// platform's reduced-motion setting.
   final Duration animationDuration;
+
+  /// Annotation arrows drawn over the board, in their own color or the
+  /// theme's [ChessBoardTheme.arrowColor]. They never block touches. The
+  /// board only reads this list; it never changes it. Arrows with bad
+  /// square names are skipped.
+  final List<Arrow> arrows;
+
+  /// Circled or tinted squares, following the same rules as [arrows].
+  final List<SquareMark> marks;
+
+  /// A single suggestion arrow, such as an engine's best move. It is drawn
+  /// dashed with an open head in [ChessBoardTheme.hintArrowColor], so it
+  /// never looks like an annotation arrow.
+  ///
+  /// The hint disappears when the position changes (a move made on the
+  /// board or through the controller, an undo, history navigation or a
+  /// newly loaded position) and when [hintTimeout] passes. It is compared
+  /// by value: passing an equal hint again doesn't bring it back; pass a
+  /// different one, or null and then the hint, to show it again.
+  final Arrow? hint;
+
+  /// How long [hint] stays up when no move is made, or null to keep it
+  /// until the next move. A new hint restarts the timer.
+  final Duration? hintTimeout;
 
   /// The theme with the shortcut color parameters applied.
   ChessBoardTheme get effectiveTheme =>
@@ -247,6 +279,26 @@ class _ChessBoardState extends State<ChessBoard>
   /// Changes only when the pointer crosses into another square.
   final ValueNotifier<DropTarget?> _dropTarget = ValueNotifier(null);
 
+  /// The hint arrow being shown, or null once dismissed.
+  final ValueNotifier<Arrow?> _hint = ValueNotifier(null);
+
+  /// Clears [_hint] after [ChessBoard.hintTimeout].
+  Timer? _hintTimer;
+
+  /// Shows [hint] (or nothing) and restarts its timeout.
+  void _showHint(Arrow? hint) {
+    _hintTimer?.cancel();
+    _hintTimer = null;
+    _hint.value = hint;
+    final timeout = widget.hintTimeout;
+    if (hint != null && timeout != null) {
+      _hintTimer = Timer(timeout, _dismissHint);
+    }
+  }
+
+  /// Hides the hint until the app passes a different one.
+  void _dismissHint() => _showHint(null);
+
   /// Fades [child] out and back in while the board flips, so labels,
   /// highlights and arrows (which switch to the new orientation at once)
   /// never sit on squares the turning pieces haven't reached.
@@ -301,6 +353,7 @@ class _ChessBoardState extends State<ChessBoard>
     _promotion.addListener(_syncHiddenSquare);
     _animation.addListener(_syncHiddenSquare);
     _shownPieces = widget.controller.pieces;
+    _showHint(widget.hint);
   }
 
   /// Loads [ChessBoard.initialFen] into a controller that hasn't been used
@@ -379,6 +432,13 @@ class _ChessBoardState extends State<ChessBoard>
       ..revalidate();
     if (_drag.value case final d? when !_canDragFrom(d.from)) _cancelDrag();
     _revalidatePromotion();
+    if (widget.hint != oldWidget.hint) {
+      _showHint(widget.hint);
+    } else if (widget.hintTimeout != oldWidget.hintTimeout &&
+        _hint.value != null) {
+      // Restart (or stop) the timer for the hint already showing.
+      _showHint(_hint.value);
+    }
     if (widget.pieceSet != oldWidget.pieceSet &&
         widget.pieceSet != _loadingSet) {
       _load(widget.pieceSet);
@@ -411,6 +471,7 @@ class _ChessBoardState extends State<ChessBoard>
     _cancelPromotion();
     _interaction.clear();
     _cancelDrag();
+    _dismissHint();
   }
 
   /// Reports the change just seen to [ChessBoard.onMove] and
@@ -485,6 +546,9 @@ class _ChessBoardState extends State<ChessBoard>
       // A drag from the old position can't land in the new one.
       _cancelDrag();
       _cancelPromotion();
+      // The hint was advice for the old position, so any change of
+      // position retires it: a move, undo, navigation or a new game.
+      _dismissHint();
       _planAnimation(previousId);
       _positionChanges.notify();
       _reportChange();
@@ -675,6 +739,8 @@ class _ChessBoardState extends State<ChessBoard>
     _flipCurve.dispose();
     _flip.dispose();
     _dropTarget.dispose();
+    _hintTimer?.cancel();
+    _hint.dispose();
     super.dispose();
   }
 
@@ -755,6 +821,23 @@ class _ChessBoardState extends State<ChessBoard>
                 ),
               ),
             ),
+            if (widget.marks.any((m) => m.shape == MarkShape.fill))
+              Positioned.fill(
+                // Tinted squares sit under the pieces, like highlights.
+                child: IgnorePointer(
+                  child: _whileNotFlipping(
+                    RepaintBoundary(
+                      child: CustomPaint(
+                        painter: BoardMarkFillsPainter(
+                          geometry: geometry,
+                          marks: widget.marks,
+                          theme: theme,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             Positioned.fill(
               // Under the pieces, like the other square tints, so a piece on
               // the target square (a capture) is framed, not washed out.
@@ -818,6 +901,28 @@ class _ChessBoardState extends State<ChessBoard>
                 _highlightLayer(
                   theme,
                   (h) => BoardMarkersPainter(geometry: geometry, highlights: h),
+                ),
+              ),
+            ),
+            Positioned.fill(
+              // Arrows, marks and the hint: drawn over the pieces, never
+              // taking input.
+              child: IgnorePointer(
+                child: _whileNotFlipping(
+                  RepaintBoundary(
+                    child: ValueListenableBuilder<Arrow?>(
+                      valueListenable: _hint,
+                      builder: (context, hint, _) => CustomPaint(
+                        painter: BoardArrowsPainter(
+                          geometry: geometry,
+                          arrows: widget.arrows,
+                          marks: widget.marks,
+                          hint: hint,
+                          theme: theme,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
