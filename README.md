@@ -5,7 +5,7 @@ already know: tap or drag to move, legal moves shown as you pick up a
 piece, smooth animations, arrows, premoves, keyboard play and screen-reader
 support. It runs on Android, iOS, web, Windows, macOS and Linux.
 
-![A board mid-game, with a knight selected, arrows and a dashed hint](https://raw.githubusercontent.com/OWNER/modern_chess_board/main/doc/board.png)
+![A board mid-game, with a knight selected, arrows and a dashed hint](https://raw.githubusercontent.com/mkvmb6/modern_chess_board/main/doc/board.png)
 
 ## Getting started
 
