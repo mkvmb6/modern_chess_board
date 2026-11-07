@@ -182,7 +182,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Smoke widget test for the example.
   - _Req 15_
 
-- [ ] 30. Docs and publishing checks
+- [x] 30. Docs and publishing checks
   - README with usage examples for every feature and a screenshot/GIF; CHANGELOG `0.1.0`; LICENSE (MIT unless you choose otherwise) plus the asset license note; dartdoc on all public API.
   - Final gate: `flutter analyze` clean, `dart format --set-exit-if-changed .`, `flutter test`, `dart pub publish --dry-run` with no warnings.
   - _Req 13, 15_

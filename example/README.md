@@ -1,17 +1,13 @@
-# modern_chess_board_example
+# modern_chess_board example
 
-A new Flutter project.
+A playable demo of every option the board has: themes, piece sets,
+coordinates, a random-move opponent with premoves, arrows and hints,
+keyboard play, FEN and PGN loading, and the sound event log.
 
-## Getting Started
+```sh
+cd example
+flutter run
+```
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The code to read first is `lib/main.dart`; the game state the controls
+change lives in `lib/demo_state.dart`.
