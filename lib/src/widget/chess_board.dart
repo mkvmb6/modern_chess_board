@@ -3,7 +3,10 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../controller/board_change.dart';
 import '../controller/chess_board_controller.dart';
+import '../model/board_move.dart';
+import '../model/game_status.dart';
 import '../model/piece.dart';
 import '../model/square.dart';
 import '../pieces/piece_set.dart';
@@ -46,6 +49,8 @@ class ChessBoard extends StatefulWidget {
     this.interactiveSide = InteractiveSide.both,
     this.autoQueen = false,
     this.promotionPickerBuilder,
+    this.onMove,
+    this.onGameEnd,
   });
 
   /// The game shown on the board.
@@ -99,6 +104,21 @@ class ChessBoard extends StatefulWidget {
   /// over the whole board; call [PromotionRequest.choose] or
   /// [PromotionRequest.cancel] to finish.
   final PromotionPickerBuilder? promotionPickerBuilder;
+
+  /// Called after each move the user makes on the board, by tap, drag or
+  /// promotion choice. The move carries from, to, promotion and SAN, and is
+  /// already applied: `controller.fen` is the resulting position. Read it
+  /// before replying with a move of your own. Moves made through the
+  /// controller are not reported.
+  final ValueChanged<BoardMove>? onMove;
+
+  /// Called once when a move ends the game, whether the user or the app
+  /// made it, with the status, result and draw reason.
+  ///
+  /// Not called for loading a finished game, navigating history, or
+  /// changes made with `notify: false`. Several silent changes followed by
+  /// one `notifyListeners()` count as a single change.
+  final ValueChanged<GameEnd>? onGameEnd;
 
   /// The theme with the shortcut color parameters applied.
   ChessBoardTheme get effectiveTheme =>
@@ -247,6 +267,25 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
     _cancelDrag();
   }
 
+  /// Reports the change just seen to [ChessBoard.onMove] and
+  /// [ChessBoard.onGameEnd]. Only a played move that wasn't silent counts:
+  /// loading, undo, reset and navigation never report.
+  ///
+  /// The game-end check is taken before [ChessBoard.onMove] runs. If the
+  /// app replies to the move from inside onMove, that reply is a change of
+  /// its own and is reported by its own notification; this pass then stops,
+  /// so a reply that ends the game is reported once, not twice.
+  void _reportChange() {
+    final c = widget.controller;
+    final change = c.lastChange;
+    if (change is! MoveApplied || change.silent) return;
+    final id = c.changeId;
+    final end = c.isGameOver ? GameEnd._of(c) : null;
+    if (change.source == MoveSource.user) widget.onMove?.call(change.move);
+    if (!mounted || widget.controller.changeId != id) return;
+    if (end != null) widget.onGameEnd?.call(end);
+  }
+
   /// The board's only controller listener. A changed position clears any
   /// selection (it refers to the old position) and redraws the pieces.
   /// Notifications that change no position, such as toggling
@@ -260,6 +299,7 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
       _cancelDrag();
       _cancelPromotion();
       _positionChanges.notify();
+      _reportChange();
     } else {
       _interaction.revalidate();
       if (_drag.value case final d? when !_canDragFrom(d.from)) _cancelDrag();
@@ -587,6 +627,46 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
 bool _isFallbackStyle(TextStyle style) =>
     style.color == const Color(0xD0FF0000) &&
     style.decoration == TextDecoration.underline;
+
+/// How a game ended, reported by [ChessBoard.onGameEnd].
+@immutable
+class GameEnd {
+  /// Creates a game end.
+  const GameEnd({
+    required this.status,
+    required this.result,
+    this.drawReason,
+  });
+
+  GameEnd._of(ChessBoardController c)
+    : status = c.status,
+      result = c.result,
+      drawReason = c.drawReason;
+
+  /// Checkmate, stalemate or draw.
+  final GameStatus status;
+
+  /// Who won, or a draw.
+  final GameResult result;
+
+  /// Why the game was drawn, or null when it was won.
+  final DrawReason? drawReason;
+
+  @override
+  bool operator ==(Object other) =>
+      other is GameEnd &&
+      other.status == status &&
+      other.result == result &&
+      other.drawReason == drawReason;
+
+  @override
+  int get hashCode => Object.hash(status, result, drawReason);
+
+  @override
+  String toString() =>
+      'GameEnd(${status.name}, ${result.pgn}'
+      '${drawReason == null ? '' : ', ${drawReason!.name}'})';
+}
 
 /// A pawn move waiting for the user to choose a piece.
 typedef _PendingPromotion = ({Square from, Square to, PieceColor color});

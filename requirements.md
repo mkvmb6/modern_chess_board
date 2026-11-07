@@ -40,7 +40,7 @@ Only legal moves are ever accepted. Legality must come from the rules engine's m
 - Optional auto-queen setting that skips the picker.
 - Apps can supply their own picker widget.
 
-**Callbacks:** the widget reports every successful user move to the app (from, to, promotion, SAN, resulting FEN) and reports game end (result and reason). Moves made through the controller are not reported as user moves.
+**Callbacks:** the widget reports every successful user move to the app (from, to, promotion, SAN; the resulting FEN is readable from the controller when the callback runs) and reports game end (status, result and draw reason). Moves made through the controller are not reported as user moves.
 
 ## 3. Visual feedback
 

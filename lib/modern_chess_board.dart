@@ -32,7 +32,7 @@ export 'src/sound/chess_sound_pack.dart' show ChessSoundPack, SilentSoundPack;
 export 'src/theme/chess_board_theme.dart'
     show AnnotationColors, ChessBoardTheme;
 export 'src/widget/board_geometry.dart' show BoardOrientation, CoordinateMode;
-export 'src/widget/chess_board.dart' show ChessBoard;
+export 'src/widget/chess_board.dart' show ChessBoard, GameEnd;
 export 'src/widget/interaction/board_interaction.dart' show InteractiveSide;
 export 'src/widget/promotion/promotion_picker.dart'
     show PromotionPickerBuilder, PromotionRequest;

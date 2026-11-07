@@ -98,7 +98,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Tests: both inputs castle on both sides for both colors; the rook ends up on the right square.
   - _Req 2. Design 5.4_
 
-- [ ] 16. Callbacks
+- [x] 16. Callbacks
   - `onMove` for user moves only, `onGameEnd` once per game end.
   - Tests: code moves don't fire `onMove`; mate by tap fires `onGameEnd` once with the right result.
   - _Req 2_
@@ -142,6 +142,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
 ## Phase 8: Advanced input
 
 - [ ] 23. Premoves
+  - A premove reports `onMove` when it is played, not when it is queued.
   - Queue by tap or drag on the opponent's turn, premove highlight, cancel, auto-play on the opponent's move, silent discard if illegal. Split `BoardInteraction.canMove` into a selectable check (no turn check when premoves are on) and a can-move-now check, with premove destinations as a second source of targets. Premove destinations also resolve king-onto-rook to castling.
   - Tests: queue, cancel, play when legal, discard when illegal, unavailable when `interactiveSide` is both or premoves are off; a controller swap drops a queued premove.
   - _Req 12. Design 5.5_
