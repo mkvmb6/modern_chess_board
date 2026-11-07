@@ -224,9 +224,10 @@ class ChessBoardController extends ChangeNotifier {
   /// reaching the last rank.
   ///
   /// The move is checked against the rules engine's legal move list.
-  /// Returns true if it was legal and applied. A pawn move to the last rank
-  /// without [promotion] is rejected. [promotion] is ignored for moves that
-  /// don't promote, so apps can always pass their preferred piece.
+  /// Returns true if it was legal and applied. Moves are rejected once the
+  /// game is over, including after a draw by rule. A pawn move to the last
+  /// rank without [promotion] is rejected. [promotion] is ignored for moves
+  /// that don't promote, so apps can always pass their preferred piece.
   bool move(
     Square from,
     Square to, {
@@ -404,6 +405,9 @@ class ChessBoardController extends ChangeNotifier {
   }
 
   bool _apply(ch.Move m, MoveSource source, bool notify) {
+    // The engine still generates moves after a draw by rule (repetition,
+    // fifty moves, insufficient material), but the game is over.
+    if (isGameOver) return false;
     final discarded = _line.length - _cursor;
     if (discarded > 0) {
       if (!_allowBranching) return false;

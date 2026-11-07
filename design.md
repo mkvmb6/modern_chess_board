@@ -106,11 +106,11 @@ Engine workarounds, discovered while building task 3:
 
 ### 4.4 Move classification (`move_classifier.dart`)
 
-`SoundEvent classify(BoardMove m, Chess after)`, checked in this order: game over, then promotion flag, then castle flag, then check, then capture (en passant included), then normal move. It is a pure function, so it can be tested exhaustively.
+`SoundEvent classifyMove(BoardMove move, GameStatus status)`, checked in this order: game over, then promotion flag, then castle flag, then check, then capture (en passant included), then normal move. Every game-ending status gives `gameEnd`, including draws by repetition, the fifty-move rule and insufficient material. It is a pure function, so it can be tested exhaustively.
 
 ### 4.5 Notation helpers
 
-`notation.dart` turns a move into spoken text such as "White knight to f3, check", or "White castles kingside", for screen-reader announcements (R11).
+`notation.dart` has `describeMove(move, {drawReason})`, which turns a move into spoken English such as "White knight to f3, check", "White knight from b1 to d2" (when SAN disambiguates), or "White castles kingside", for screen-reader announcements (R11). A checking move that also draws keeps both: "..., check, draw by threefold repetition".
 
 ## 5. Widget architecture (`src/widget`)
 
@@ -326,7 +326,7 @@ Haptics: `HapticFeedback.selectionClick()` on pickup and `lightImpact()` on drop
 
 - Each square is `Semantics(label: 'e4, white pawn', button: true, selected: isSelected, hint: isLegalTarget ? 'legal move' : null, onTap: ...)`, built in a separate semantics-only grid. That grid sits under the visual layers and is excluded from painting, so it is cheap.
 - Activating a square runs the same tap logic, so screen-reader users can move pieces (R11).
-- After each `MoveApplied`, the board calls `SemanticsService.announce(notation.describe(move), textDirection)`.
+- After each `MoveApplied`, the board calls `SemanticsService.announce(moveAnnouncer(move, drawReason), textDirection)`. `moveAnnouncer` is a widget parameter, `String Function(BoardMove, DrawReason?)`, that defaults to `describeMove`, so apps can localize announcements.
 - Label text uses `MediaQuery.textScalerOf(context)`, clamped so that labels never overflow the square or margin.
 
 ## 11. Performance notes

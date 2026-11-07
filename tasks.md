@@ -34,9 +34,9 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Tests: navigation keeps the line; move while viewing is rejected; branching cuts the line; `undo` only works live; property test that random navigation equals replaying the first N moves.
   - _Req 6. Design 4.1_
 
-- [ ] 5. Move classifier and notation
+- [x] 5. Move classifier and notation
   - `classify()` with the priority game end > promotion > castle > check > capture > move, with en passant counted as capture.
-  - `describe()` for spoken text.
+  - `describeMove()` for spoken text. The board widget exposes a `moveAnnouncer` override for localization (task 26).
   - Tests: one known position per event, plus combined cases (promotion with capture and mate gives `gameEnd`; castling with check gives `castle`; en passant gives `capture`). Property test that every random legal move yields exactly one event.
   - _Req 10, 11. Design 4.4, 4.5_
 

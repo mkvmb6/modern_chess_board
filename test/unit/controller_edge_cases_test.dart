@@ -84,7 +84,7 @@ void main() {
     });
 
     test('pgn round-trips from a FEN with black to move', () {
-      const fen = '4k3/8/8/8/8/8/8/4K3 b - - 0 1';
+      const fen = '4k3/p7/8/8/8/8/P7/4K3 b - - 0 1';
       final a = ChessBoardController(fen: fen);
       play(a, ['Kd7', 'Kd2', 'Ke6']);
       expect(a.pgn, contains('[FEN "$fen"]'));
@@ -157,6 +157,35 @@ void main() {
       final copy = ChessBoardController();
       expect(copy.loadPgn(c.pgn), isTrue);
       expect(copy.fen, c.fen);
+    });
+  });
+
+  group('game over', () {
+    test('no moves are accepted after a draw by rule', () {
+      final rep = ChessBoardController();
+      play(rep, ['Nf3', 'Nf6', 'Ng1', 'Ng8', 'Nf3', 'Nf6', 'Ng1', 'Ng8']);
+      expect(rep.isGameOver, isTrue);
+      expect(rep.move(Square.g1, Square.f3), isFalse);
+      expect(rep.moveSan('e4'), isFalse);
+      expect(applyUserMove(rep, Square.e2, Square.e4), isFalse);
+
+      final bare = ChessBoardController(fen: '4k3/8/8/8/8/8/8/4K3 w - - 0 1');
+      expect(bare.drawReason, DrawReason.insufficientMaterial);
+      expect(bare.move(Square.e1, Square.d1), isFalse);
+
+      final fifty = ChessBoardController(
+        fen: '4k3/8/8/8/8/8/R7/4K3 w - - 99 80',
+      );
+      expect(fifty.moveSan('Ra3'), isTrue);
+      expect(fifty.moveSan('Kd8'), isFalse);
+    });
+
+    test('undo after a draw by rule makes moves possible again', () {
+      final c = ChessBoardController();
+      play(c, ['Nf3', 'Nf6', 'Ng1', 'Ng8', 'Nf3', 'Nf6', 'Ng1', 'Ng8']);
+      expect(c.undo(), isTrue);
+      expect(c.isGameOver, isFalse);
+      expect(c.moveSan('Nc6'), isTrue);
     });
   });
 
