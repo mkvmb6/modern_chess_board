@@ -167,7 +167,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
 
 ## Phase 10: Hardening
 
-- [ ] 27. Property-based end-to-end tests
+- [x] 27. Property-based end-to-end tests
   - Random legal games played through widget taps and drags in random orientations; after each move, the rendered piece map equals the controller FEN.
   - _Req 15. Design 12_
 
