@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -17,6 +18,7 @@ import '../theme/chess_board_theme.dart';
 import 'animation/move_animator.dart';
 import 'animation/move_plan.dart';
 import 'board_geometry.dart';
+import 'interaction/annotation_drawing.dart';
 import 'interaction/board_gesture_layer.dart';
 import 'interaction/board_interaction.dart';
 import 'interaction/drag_layer.dart';
@@ -66,6 +68,10 @@ class ChessBoard extends StatefulWidget {
     this.marks = const [],
     this.hint,
     this.hintTimeout,
+    this.enableUserAnnotations = true,
+    this.clearUserAnnotationsOnMove = true,
+    this.onUserArrowsChanged,
+    this.onUserMarksChanged,
   });
 
   /// The game shown on the board.
@@ -167,6 +173,25 @@ class ChessBoard extends StatefulWidget {
   /// How long [hint] stays up when no move is made, or null to keep it
   /// until the next move. A new hint restarts the timer.
   final Duration? hintTimeout;
+
+  /// Whether the user can draw arrows and circles: right-click (or
+  /// long-press on touch) and drag draws an arrow, releasing on the
+  /// starting square toggles a circle. Shift, Alt and Shift+Alt pick the
+  /// other [ChessBoardTheme.annotationColors]. Drawing something already
+  /// there in the same color removes it. Turning this off clears them.
+  final bool enableUserAnnotations;
+
+  /// Whether user drawings are cleared when the position changes: a move
+  /// (on the board or through the controller), an undo, history
+  /// navigation or a newly loaded position. Drawings are about the
+  /// position they were drawn on, so this is on by default.
+  final bool clearUserAnnotationsOnMove;
+
+  /// Called with the user's arrows whenever they change.
+  final ValueChanged<List<Arrow>>? onUserArrowsChanged;
+
+  /// Called with the user's circles whenever they change.
+  final ValueChanged<List<SquareMark>>? onUserMarksChanged;
 
   /// The theme with the shortcut color parameters applied.
   ChessBoardTheme get effectiveTheme =>
@@ -281,6 +306,92 @@ class _ChessBoardState extends State<ChessBoard>
 
   /// The hint arrow being shown, or null once dismissed.
   final ValueNotifier<Arrow?> _hint = ValueNotifier(null);
+
+  /// Arrows and circles the user drew.
+  final UserAnnotations _userDrawings = UserAnnotations();
+
+  /// The arrow being drawn, or null when not drawing.
+  final ValueNotifier<DrawingPreview?> _drawing = ValueNotifier(null);
+
+  AnnotationColors get _annotationColors =>
+      widget.effectiveTheme.annotationColors;
+
+  void _onDrawStart(Square square) {
+    if (!widget.enableUserAnnotations) return;
+    // Drawing takes over from any selection, as on chess sites.
+    _interaction.clear();
+    _cancelDrag();
+    _drawing.value = DrawingPreview(
+      from: square,
+      to: square,
+      color: currentAnnotationColor(_annotationColors),
+    );
+  }
+
+  void _onDrawUpdate(Offset position, BoardGeometry geometry) {
+    final d = _drawing.value;
+    if (d == null) return;
+    // The color follows the modifier keys, so the preview always shows
+    // the color the drawing will land in.
+    final next = DrawingPreview(
+      from: d.from,
+      to: geometry.squareAt(position),
+      color: currentAnnotationColor(_annotationColors),
+    );
+    if (next != d) _drawing.value = next;
+  }
+
+  void _onDrawEnd(Offset position, BoardGeometry geometry) {
+    final d = _drawing.value;
+    _drawing.value = null;
+    if (d == null || !widget.enableUserAnnotations) return;
+    final to = geometry.squareAt(position);
+    if (to == null) return;
+    // The color is read when the button lifts, so a modifier pressed
+    // mid-drag still counts.
+    final color = currentAnnotationColor(_annotationColors);
+    if (to == d.from) {
+      _userDrawings.toggleCircle(to, color);
+      widget.onUserMarksChanged?.call(_userDrawings.marks);
+    } else {
+      _userDrawings.toggleArrow(d.from, to, color);
+      widget.onUserArrowsChanged?.call(_userDrawings.arrows);
+    }
+  }
+
+  void _onDrawCancel() => _drawing.value = null;
+
+  /// Clears the user's drawings and reports the lists that changed. With
+  /// [cancelDrawing], an arrow being drawn is dropped too; a position
+  /// change keeps it, since its start square is still on the board.
+  ///
+  /// Reports made while the framework is building (from `didUpdateWidget`)
+  /// wait until after the frame, so an app that calls `setState` in the
+  /// callback doesn't trip "setState() called during build".
+  void _clearUserDrawings({bool cancelDrawing = false}) {
+    if (cancelDrawing) _drawing.value = null;
+    final changed = _userDrawings.clear();
+    if (!changed.arrows && !changed.marks) return;
+    void report() {
+      if (!mounted) return;
+      if (changed.arrows) widget.onUserArrowsChanged?.call(const []);
+      if (changed.marks) widget.onUserMarksChanged?.call(const []);
+    }
+
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => report());
+    } else {
+      report();
+    }
+  }
+
+  /// What the arrows layer repaints for.
+  late final Listenable _arrowsChanges = Listenable.merge([
+    _hint,
+    _userDrawings,
+    _drawing,
+  ]);
 
   /// Clears [_hint] after [ChessBoard.hintTimeout].
   Timer? _hintTimer;
@@ -432,6 +543,9 @@ class _ChessBoardState extends State<ChessBoard>
       ..revalidate();
     if (_drag.value case final d? when !_canDragFrom(d.from)) _cancelDrag();
     _revalidatePromotion();
+    if (!widget.enableUserAnnotations && oldWidget.enableUserAnnotations) {
+      _clearUserDrawings(cancelDrawing: true);
+    }
     if (widget.hint != oldWidget.hint) {
       _showHint(widget.hint);
     } else if (widget.hintTimeout != oldWidget.hintTimeout &&
@@ -472,6 +586,7 @@ class _ChessBoardState extends State<ChessBoard>
     _interaction.clear();
     _cancelDrag();
     _dismissHint();
+    _clearUserDrawings(cancelDrawing: true);
   }
 
   /// Reports the change just seen to [ChessBoard.onMove] and
@@ -549,6 +664,8 @@ class _ChessBoardState extends State<ChessBoard>
       // The hint was advice for the old position, so any change of
       // position retires it: a move, undo, navigation or a new game.
       _dismissHint();
+      // User drawings are about the old position too.
+      if (widget.clearUserAnnotationsOnMove) _clearUserDrawings();
       _planAnimation(previousId);
       _positionChanges.notify();
       _reportChange();
@@ -629,7 +746,7 @@ class _ChessBoardState extends State<ChessBoard>
     return piece != null && _interaction.canMove(piece.color);
   }
 
-  void _onPressDown(Square square, PointerDeviceKind kind) {
+  bool _onPressDown(Square square, PointerDeviceKind kind) {
     // A piece still sliding lands at once, so it can be pressed or
     // dragged without showing twice.
     _animation.finish();
@@ -639,6 +756,9 @@ class _ChessBoardState extends State<ChessBoard>
     final dragsPiece =
         outcome == TapOutcome.selected || outcome == TapOutcome.pressedSelected;
     _pressOrigin = dragsPiece ? (square, kind) : null;
+    // A press that moved, or is waiting on the promotion picker, has done
+    // its job; holding it doesn't start drawing.
+    return outcome != TapOutcome.moved && _promotion.value == null;
   }
 
   void _onDragStart(Offset position, BoardGeometry geometry) {
@@ -741,6 +861,8 @@ class _ChessBoardState extends State<ChessBoard>
     _dropTarget.dispose();
     _hintTimer?.cancel();
     _hint.dispose();
+    _userDrawings.dispose();
+    _drawing.dispose();
     super.dispose();
   }
 
@@ -910,15 +1032,18 @@ class _ChessBoardState extends State<ChessBoard>
               child: IgnorePointer(
                 child: _whileNotFlipping(
                   RepaintBoundary(
-                    child: ValueListenableBuilder<Arrow?>(
-                      valueListenable: _hint,
-                      builder: (context, hint, _) => CustomPaint(
+                    child: ListenableBuilder(
+                      listenable: _arrowsChanges,
+                      builder: (context, _) => CustomPaint(
                         painter: BoardArrowsPainter(
                           geometry: geometry,
                           arrows: widget.arrows,
                           marks: widget.marks,
-                          hint: hint,
+                          hint: _hint.value,
                           theme: theme,
+                          userArrows: _userDrawings.arrows,
+                          userMarks: _userDrawings.marks,
+                          preview: _drawing.value?.arrow,
                         ),
                       ),
                     ),
@@ -957,6 +1082,11 @@ class _ChessBoardState extends State<ChessBoard>
                         _onPressUp(p, geometry, dragged: dragged),
                     onPressCancel: _onPressCancel,
                     onHoverSquare: (s) => _hover.value = s,
+                    drawingEnabled: widget.enableUserAnnotations,
+                    onDrawStart: _onDrawStart,
+                    onDrawUpdate: (p) => _onDrawUpdate(p, geometry),
+                    onDrawEnd: (p) => _onDrawEnd(p, geometry),
+                    onDrawCancel: _onDrawCancel,
                   ),
                 ),
               ),

@@ -221,7 +221,7 @@ A user can move when all of these hold:
 - Drawing works with the secondary mouse button, or with a long press of about 400 ms on touch. Dragging draws an arrow; releasing on the starting square toggles a circle.
 - Modifier keys pick the color: none is green, Shift is red, Alt is blue, and Shift+Alt is yellow. All four colors come from the theme.
 - Drawing an existing arrow or circle again removes it.
-- The board reports changes through the callbacks. If `clearUserAnnotationsOnMove` is true, user annotations are cleared on every `MoveApplied`.
+- The board reports changes through the callbacks (deferred to after the frame when the clear happens during a rebuild). If `clearUserAnnotationsOnMove` is true, user annotations are cleared on every change of position (move, undo, navigation or load); an arrow being drawn survives it. A long press on touch takes the gesture arena only when it starts drawing, so the page still scrolls from empty squares; a press that made a move or opened the promotion picker never starts drawing. On the web, the browser context menu is turned off while the mouse is over the board.
 
 ### 5.7 Animation (`move_animator.dart`)
 

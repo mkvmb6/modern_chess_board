@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -5,6 +8,9 @@ import 'package:flutter/widgets.dart';
 
 import '../../model/square.dart';
 import '../board_geometry.dart';
+
+/// How long a finger must stay still before a press starts drawing.
+const Duration annotationLongPress = Duration(milliseconds: 400);
 
 /// Turns raw pointer input over the board into presses and drags.
 ///
@@ -15,9 +21,11 @@ import '../board_geometry.dart';
 /// press is cancelled ([onPressCancel]) when the platform cancels the
 /// pointer or a second finger lands, as in a pinch.
 ///
-/// Only primary presses inside the playing area start a press; other
-/// buttons and presses on outside labels are ignored, leaving room for
-/// drawing with the secondary button later.
+/// Only primary presses inside the playing area start a press; presses on
+/// outside labels are ignored. When [drawingEnabled], the secondary mouse
+/// button draws instead ([onDrawStart], [onDrawUpdate], [onDrawEnd]), and
+/// so does a touch held still for [annotationLongPress]; the held press is
+/// cancelled first.
 ///
 /// Raw pointer events never enter Flutter's gesture arena, so a scroll view
 /// around the board would otherwise scroll while a piece is dragged. The
@@ -43,7 +51,27 @@ class BoardGestureLayer extends StatefulWidget {
     required this.onPressCancel,
     this.refresh,
     this.onHoverSquare,
+    this.drawingEnabled = false,
+    this.onDrawStart,
+    this.onDrawUpdate,
+    this.onDrawEnd,
+    this.onDrawCancel,
   });
+
+  /// Whether right-click and long-press draw annotations.
+  final bool drawingEnabled;
+
+  /// Drawing started on a square.
+  final ValueChanged<Square>? onDrawStart;
+
+  /// The pointer moved while drawing, at this local position.
+  final ValueChanged<Offset>? onDrawUpdate;
+
+  /// Drawing ended at this local position.
+  final ValueChanged<Offset>? onDrawEnd;
+
+  /// Drawing was abandoned.
+  final VoidCallback? onDrawCancel;
 
   /// Where squares are, in this widget's coordinates.
   final BoardGeometry geometry;
@@ -55,8 +83,10 @@ class BoardGestureLayer extends StatefulWidget {
   /// Whether a piece is being dragged, for the grabbing cursor.
   final bool dragging;
 
-  /// A press started on a square.
-  final void Function(Square square, PointerDeviceKind kind) onPressDown;
+  /// A press started on a square. Returns whether holding the press may
+  /// still turn it into drawing: false when the press made a move or
+  /// opened the promotion picker.
+  final bool Function(Square square, PointerDeviceKind kind) onPressDown;
 
   /// The pointer moved past the drag slop, at this local position.
   final ValueChanged<Offset> onDragStart;
@@ -87,6 +117,8 @@ class _BoardGestureLayerState extends State<BoardGestureLayer> {
   Offset? _downAt;
   PointerDeviceKind _kind = PointerDeviceKind.touch;
   bool _dragged = false;
+  bool _drawing = false;
+  Timer? _longPress;
 
   Offset? _hoverAt;
   bool _hoverGrabbable = false;
@@ -96,7 +128,23 @@ class _BoardGestureLayerState extends State<BoardGestureLayer> {
       final square = widget.geometry.squareAt(local);
       return square != null && widget.canDragFrom(square);
     },
+    mayHold: (event) =>
+        widget.drawingEnabled &&
+        event.kind != PointerDeviceKind.mouse &&
+        widget.geometry.squareAt(event.localPosition) != null,
   );
+
+  /// Whether the browser's context menu is turned off while the mouse is
+  /// over the board, so right-click can draw on the web.
+  bool _contextMenuOff = false;
+
+  void _setContextMenuOff(bool off) {
+    if (!kIsWeb || off == _contextMenuOff) return;
+    _contextMenuOff = off;
+    off
+        ? BrowserContextMenu.disableContextMenu()
+        : BrowserContextMenu.enableContextMenu();
+  }
 
   @override
   void initState() {
@@ -117,6 +165,8 @@ class _BoardGestureLayerState extends State<BoardGestureLayer> {
   @override
   void dispose() {
     widget.refresh?.removeListener(_recheckHover);
+    _longPress?.cancel();
+    _setContextMenuOff(false);
     super.dispose();
   }
 
@@ -129,39 +179,80 @@ class _BoardGestureLayerState extends State<BoardGestureLayer> {
     _pointer = null;
     _downAt = null;
     _dragged = false;
+    _drawing = false;
+    _longPress?.cancel();
+    _longPress = null;
+  }
+
+  void _startDrawing(Square square) {
+    _longPress?.cancel();
+    _longPress = null;
+    _drawing = true;
+    widget.onDrawStart?.call(square);
   }
 
   void _onDown(PointerDownEvent e) {
     if (_pointer != null) {
       // A second finger, as in a pinch: abandon the first press.
+      final drawing = _drawing;
       _reset();
-      widget.onPressCancel();
+      drawing ? widget.onDrawCancel?.call() : widget.onPressCancel();
+      return;
+    }
+    final square = widget.geometry.squareAt(e.localPosition);
+    if (square == null) return;
+    if (e.buttons == kSecondaryMouseButton && widget.drawingEnabled) {
+      _pointer = e.pointer;
+      _downAt = e.localPosition;
+      _kind = e.kind;
+      _startDrawing(square);
       return;
     }
     if (e.buttons != kPrimaryButton) return;
-    final square = widget.geometry.squareAt(e.localPosition);
-    if (square == null) return;
     _pointer = e.pointer;
     _downAt = e.localPosition;
     _kind = e.kind;
     _dragged = false;
-    widget.onPressDown(square, e.kind);
+    final mayDraw = widget.onPressDown(square, e.kind);
+    if (mayDraw && widget.drawingEnabled && e.kind != PointerDeviceKind.mouse) {
+      // A finger held still turns the press into drawing. It takes the
+      // gesture arena then, so an enclosing scroll view stops scrolling;
+      // if the scroll view already won, the press stays a scroll.
+      _longPress = Timer(annotationLongPress, () {
+        _longPress = null;
+        if (!mounted || _pointer != e.pointer || _dragged) return;
+        if (!widget.drawingEnabled || !_claim.claim(e.pointer)) return;
+        widget.onPressCancel();
+        _startDrawing(square);
+      });
+    }
   }
 
   void _onMove(PointerMoveEvent e) {
     if (e.pointer != _pointer) return;
+    if (_drawing) {
+      widget.onDrawUpdate?.call(e.localPosition);
+      return;
+    }
     if (_dragged) {
       widget.onDragUpdate(e.localPosition);
       return;
     }
     if ((e.localPosition - _downAt!).distance > _slop) {
       _dragged = true;
+      _longPress?.cancel();
+      _longPress = null;
       widget.onDragStart(e.localPosition);
     }
   }
 
   void _onUp(PointerUpEvent e) {
     if (e.pointer != _pointer) return;
+    if (_drawing) {
+      _reset();
+      widget.onDrawEnd?.call(e.localPosition);
+      return;
+    }
     final dragged = _dragged;
     _reset();
     widget.onPressUp(e.localPosition, dragged: dragged);
@@ -169,8 +260,9 @@ class _BoardGestureLayerState extends State<BoardGestureLayer> {
 
   void _onCancel(PointerCancelEvent e) {
     if (e.pointer != _pointer) return;
+    final drawing = _drawing;
     _reset();
-    widget.onPressCancel();
+    drawing ? widget.onDrawCancel?.call() : widget.onPressCancel();
   }
 
   void _onHover(PointerHoverEvent e) {
@@ -232,8 +324,12 @@ class _BoardGestureLayerState extends State<BoardGestureLayer> {
       },
       child: MouseRegion(
         cursor: cursor,
+        onEnter: (_) => _setContextMenuOff(widget.drawingEnabled),
         onHover: _onHover,
-        onExit: _onExit,
+        onExit: (e) {
+          _setContextMenuOff(false);
+          _onExit(e);
+        },
         child: Listener(
           behavior: HitTestBehavior.opaque,
           onPointerDown: _onDown,
@@ -248,26 +344,67 @@ class _BoardGestureLayerState extends State<BoardGestureLayer> {
 
 /// Wins the gesture arena at once for presses [shouldClaim] accepts, so
 /// enclosing scroll views and other gestures give way to a piece drag.
+///
+/// Other touch presses that [mayHold] allows enter the arena undecided:
+/// [claim] wins it later (when a long press starts drawing), and lifting
+/// the finger gives it up, so taps and scrolls around the board still work.
 class _ClaimRecognizer extends OneSequenceGestureRecognizer {
-  _ClaimRecognizer({required this.shouldClaim});
+  _ClaimRecognizer({required this.shouldClaim, required this.mayHold});
 
   final bool Function(Offset local) shouldClaim;
+  final bool Function(PointerDownEvent event) mayHold;
+
+  /// Pointers in the arena, not yet decided.
+  final Set<int> _held = {};
+
+  /// Pointers whose arena this recognizer won.
+  final Set<int> _won = {};
 
   @override
   bool isPointerAllowed(PointerDownEvent event) =>
       super.isPointerAllowed(event) &&
       event.buttons == kPrimaryButton &&
-      shouldClaim(event.localPosition);
+      (shouldClaim(event.localPosition) || mayHold(event));
 
   @override
   void addAllowedPointer(PointerDownEvent event) {
     super.addAllowedPointer(event);
-    resolve(GestureDisposition.accepted);
+    if (shouldClaim(event.localPosition)) {
+      resolvePointer(event.pointer, GestureDisposition.accepted);
+    } else {
+      _held.add(event.pointer);
+    }
+  }
+
+  /// Takes the arena for [pointer]. Returns false if another gesture, such
+  /// as a scroll, already won it.
+  bool claim(int pointer) {
+    if (_won.contains(pointer)) return true;
+    if (!_held.contains(pointer)) return false;
+    resolvePointer(pointer, GestureDisposition.accepted);
+    return _won.contains(pointer);
+  }
+
+  @override
+  void acceptGesture(int pointer) {
+    _held.remove(pointer);
+    _won.add(pointer);
+  }
+
+  @override
+  void rejectGesture(int pointer) {
+    _held.remove(pointer);
+    _won.remove(pointer);
+    super.rejectGesture(pointer);
   }
 
   @override
   void handleEvent(PointerEvent event) {
     if (event is PointerUpEvent || event is PointerCancelEvent) {
+      if (_held.contains(event.pointer)) {
+        resolvePointer(event.pointer, GestureDisposition.rejected);
+      }
+      _won.remove(event.pointer);
       stopTrackingPointer(event.pointer);
     }
   }

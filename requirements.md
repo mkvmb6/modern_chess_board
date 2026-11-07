@@ -80,7 +80,7 @@ Only legal moves are ever accepted. Legality must come from the rules engine's m
   - It disappears when the app clears it, and a new hint replaces the old one.
   - It optionally disappears after a given duration, even if no move is made.
   - It never changes the app's annotation arrow list.
-- **User-drawn annotations:** users draw arrows by right-click-dragging (desktop) or long-press-dragging (touch), and circle a square by right-clicking or long-pressing it. Drawing the same arrow or circle again removes it. Modifier keys pick colors. The board reports changes to the app, and user drawings clear on the next move unless the app opts out.
+- **User-drawn annotations:** users draw arrows by right-click-dragging (desktop) or long-press-dragging (touch), and circle a square by right-clicking or long-pressing it. Drawing the same arrow or circle again removes it. Modifier keys pick colors. The board reports changes to the app, and user drawings clear when the position changes unless the app opts out.
 - Bad square names in arrows or marks must not crash the board; they are ignored and logged in debug builds.
 
 ## 6. Controller

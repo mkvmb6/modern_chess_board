@@ -135,7 +135,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Tests: taps go through arrows; arrows redraw after a list change and after a flip; each hint dismissal rule (timeout via `tester.pump(duration)`); `arrows` is never changed by the board; `Arrow('z9','e4')` doesn't crash; a controller swap clears the hint.
   - _Req 5. Design 5.8_
 
-- [ ] 22. User-drawn annotations
+- [x] 22. User-drawn annotations
   - Right-click and long-press drawing, circle toggle, modifier colors, callbacks, clear on move with an opt-out.
   - Tests: draw arrow, draw again removes it; circle toggle; Shift gives the red color; long press on touch; cleared after a move unless opted out; disabled when `enableUserAnnotations` is false; a controller swap clears user drawings.
   - _Req 5. Design 5.6_

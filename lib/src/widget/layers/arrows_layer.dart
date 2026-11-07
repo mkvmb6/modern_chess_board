@@ -89,7 +89,19 @@ class BoardArrowsPainter extends CustomPainter {
     required this.marks,
     required this.hint,
     required this.theme,
+    this.userArrows = const [],
+    this.userMarks = const [],
+    this.preview,
   });
+
+  /// Arrows the user drew, each in its own color.
+  final List<Arrow> userArrows;
+
+  /// Circles the user drew.
+  final List<SquareMark> userMarks;
+
+  /// The arrow being drawn right now, or null.
+  final Arrow? preview;
 
   /// Where squares are.
   final BoardGeometry geometry;
@@ -110,7 +122,7 @@ class BoardArrowsPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     canvas.save();
     canvas.clipRect(geometry.boardRect);
-    for (final mark in marks) {
+    for (final mark in [...marks, ...userMarks]) {
       _paintMark(canvas, mark);
     }
     for (final arrow in arrows) {
@@ -120,6 +132,13 @@ class BoardArrowsPainter extends CustomPainter {
         continue;
       }
       _paintSolid(canvas, spec, resolveArrowColor(arrow, theme));
+    }
+    // User drawings come after the app's, and the one being drawn last.
+    for (final arrow in [...userArrows, ?preview]) {
+      final spec = ArrowSpec.of(arrow, geometry);
+      if (spec != null) {
+        _paintSolid(canvas, spec, resolveArrowColor(arrow, theme));
+      }
     }
     if (hint case final Arrow h) {
       final spec = ArrowSpec.of(h, geometry);
@@ -277,7 +296,10 @@ class BoardArrowsPainter extends CustomPainter {
       old.hint != hint ||
       old.theme != theme ||
       !listEquals(old.arrows, arrows) ||
-      !listEquals(old.marks, marks);
+      !listEquals(old.marks, marks) ||
+      old.preview != preview ||
+      !listEquals(old.userArrows, userArrows) ||
+      !listEquals(old.userMarks, userMarks);
 }
 
 /// Paints the tinted ([MarkShape.fill]) square marks. It sits under the
