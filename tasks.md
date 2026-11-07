@@ -177,7 +177,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
 
 ## Phase 11: Deliverables
 
-- [ ] 29. Example app
+- [x] 29. Example app
   - Theme, piece set and label switchers; debug sound pack logging events; flip, undo, reset and load-FEN buttons; arrows, marks and hint demo (with timeout); read-only and interactive-side toggles; move list with history navigation and PGN load; user annotations; premoves against a random-move opponent; keyboard play; haptics toggle; game-over status.
   - Smoke widget test for the example.
   - _Req 15_
