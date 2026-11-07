@@ -29,7 +29,12 @@ class ChessBoardController extends ChangeNotifier {
   ///
   /// Throws an [ArgumentError] if [fen] is not a valid, legal position.
   /// See [loadFen] for what counts as legal.
-  ChessBoardController({String? fen}) : _engine = ch.Chess() {
+  ///
+  /// See [allowBranching] for what happens when a move is made while an
+  /// earlier position is shown.
+  ChessBoardController({String? fen, bool allowBranching = false})
+    : _engine = ch.Chess(),
+      _allowBranching = allowBranching {
     if (fen == null) {
       _resetState(kInitialFen);
     } else if (!_load(fen)) {
@@ -37,10 +42,33 @@ class ChessBoardController extends ChangeNotifier {
     }
   }
 
+  /// Whether a move made while an earlier position is shown starts a new
+  /// branch, discarding the moves after it.
+  ///
+  /// When false (the default), such moves are rejected: the user has to
+  /// return to the latest position first. Changing this notifies listeners,
+  /// because it changes whether the board accepts moves.
+  bool get allowBranching => _allowBranching;
+  set allowBranching(bool value) {
+    if (value == _allowBranching) return;
+    _allowBranching = value;
+    notifyListeners();
+  }
+
+  bool _allowBranching;
+
   ch.Chess _engine;
   String _startFen = kInitialFen;
+
+  // The full game. `_rawLine[i]` is the engine's form of `_line[i]`, kept so
+  // navigating forward can replay it. `_positionKeys[i]` identifies the
+  // position after `i` moves, so it is one longer than `_line`.
   final List<BoardMove> _line = [];
+  final List<ch.Move> _rawLine = [];
   final List<String> _positionKeys = [];
+
+  // Number of moves applied to `_engine`, from 0 to `_line.length`.
+  int _cursor = 0;
   final Map<String, String> _headers = {};
   BoardChange _lastChange = const PositionReplaced(silent: true);
   int _changeId = 0;
@@ -100,14 +128,40 @@ class ChessBoardController extends ChangeNotifier {
     GameStatus.stalemate || GameStatus.draw => GameResult.draw,
   };
 
-  /// The moves played so far, oldest first.
-  List<BoardMove> get history => List.unmodifiable(_line);
+  /// The moves leading to the position shown, oldest first.
+  ///
+  /// While [isViewingHistory], this stops at the viewed position; see
+  /// [fullLine] for every move played.
+  List<BoardMove> get history => List.unmodifiable(_line.take(_cursor));
 
-  /// The most recent move, or null at the start of the game.
-  BoardMove? get lastMove => _line.isEmpty ? null : _line.last;
+  /// Every move played in the game, including moves after the viewed
+  /// position.
+  List<BoardMove> get fullLine => List.unmodifiable(_line);
 
-  /// Number of half-moves (plies) played.
+  /// The move that led to the position shown, or null at the start.
+  BoardMove? get lastMove => _cursor == 0 ? null : _line[_cursor - 1];
+
+  /// Number of half-moves played in the game, including any after the
+  /// position shown. Same as the length of [fullLine]; see [ply] for the
+  /// position shown.
   int get halfMoveCount => _line.length;
+
+  /// The ply being shown: 0 for the starting position, up to the length of
+  /// [fullLine] for the latest position.
+  int get ply => _cursor;
+
+  /// Whether an earlier position is shown, with later moves still in
+  /// [fullLine].
+  ///
+  /// While true, moves are rejected unless [allowBranching] is
+  /// set, and [undo] does nothing.
+  bool get isViewingHistory => _cursor < _line.length;
+
+  /// Whether [back] would move to an earlier position.
+  bool get canGoBack => _cursor > 0;
+
+  /// Whether [forward] would move to a later position.
+  bool get canGoForward => _cursor < _line.length;
 
   /// Headers included in [pgn], such as `White` or `Event`.
   ///
@@ -135,7 +189,8 @@ class ChessBoardController extends ChangeNotifier {
 
   /// The game in Portable Game Notation, with [pgnHeaders].
   ///
-  /// Games that don't start from the standard position get `SetUp` and
+  /// Always contains [fullLine], whichever position is shown. Games that
+  /// don't start from the standard position get `SetUp` and
   /// `FEN` headers. When the game is over and no `Result` header was set,
   /// the result is filled in automatically.
   String get pgn => _writePgn();
@@ -191,15 +246,50 @@ class ChessBoardController extends ChangeNotifier {
     return _apply(m, MoveSource.code, notify);
   }
 
-  /// Takes back the last move. Returns false, and does nothing, if no
-  /// moves have been played.
+  /// Takes back the last move, removing it from the game.
+  ///
+  /// Returns false, and does nothing, if no moves have been played or an
+  /// earlier position is shown ([isViewingHistory]). To look back without
+  /// removing moves, use [back].
   bool undo({bool notify = true}) {
-    if (_line.isEmpty) return false;
+    if (_line.isEmpty || isViewingHistory) return false;
     _engine.undo_move();
     _invalidate();
     _line.removeLast();
+    _rawLine.removeLast();
     _positionKeys.removeLast();
+    _cursor--;
     _changed(PositionReplaced(silent: !notify), notify);
+    return true;
+  }
+
+  /// Shows the previous position, keeping later moves. Returns false at
+  /// the start of the game.
+  bool back({bool notify = true}) =>
+      canGoBack && goTo(_cursor - 1, notify: notify);
+
+  /// Shows the next position in [fullLine]. Returns false at the latest
+  /// position.
+  bool forward({bool notify = true}) =>
+      canGoForward && goTo(_cursor + 1, notify: notify);
+
+  /// Shows the starting position, keeping every move.
+  bool goToStart({bool notify = true}) => goTo(0, notify: notify);
+
+  /// Shows the latest position.
+  bool goToEnd({bool notify = true}) => goTo(_line.length, notify: notify);
+
+  /// Shows the position after [ply] moves of [fullLine].
+  ///
+  /// Returns false, and does nothing, if that position is already shown.
+  /// Throws a [RangeError] if [ply] is not between 0 and the length of
+  /// [fullLine].
+  bool goTo(int ply, {bool notify = true}) {
+    RangeError.checkValueInInterval(ply, 0, _line.length, 'ply');
+    if (ply == _cursor) return false;
+    final from = _cursor;
+    _seek(ply);
+    _changed(NavigatedTo(fromPly: from, toPly: ply, silent: !notify), notify);
     return true;
   }
 
@@ -241,12 +331,14 @@ class ChessBoardController extends ChangeNotifier {
     if (!_isLegalPosition(startFen, into: replay)) return false;
 
     final moves = <BoardMove>[];
+    final rawMoves = <ch.Move>[];
     var raw = replay.generate_moves();
     final keys = [_repetitionKey(replay, raw)];
     for (final token in parsed.moves) {
       final m = _matchSan(replay, raw, token);
       if (m == null) return false;
       moves.add(_describe(replay, m));
+      rawMoves.add(m);
       replay.make_move(m);
       raw = replay.generate_moves();
       keys.add(_repetitionKey(replay, raw));
@@ -258,6 +350,10 @@ class ChessBoardController extends ChangeNotifier {
     _line
       ..clear()
       ..addAll(moves);
+    _rawLine
+      ..clear()
+      ..addAll(rawMoves);
+    _cursor = moves.length;
     _positionKeys
       ..clear()
       ..addAll(keys);
@@ -295,6 +391,9 @@ class ChessBoardController extends ChangeNotifier {
     MoveSource source,
     bool notify,
   ) {
+    // Early exit before searching moves; _apply checks this again for
+    // moves that reach it by other routes, such as moveSan.
+    if (isViewingHistory && !_allowBranching) return false;
     for (final m in _position.raw) {
       if (m.fromAlgebraic != from.name || m.toAlgebraic != to.name) continue;
       if (m.promotion == null || m.promotion!.name == promotion?.letter) {
@@ -305,12 +404,30 @@ class ChessBoardController extends ChangeNotifier {
   }
 
   bool _apply(ch.Move m, MoveSource source, bool notify) {
+    final discarded = _line.length - _cursor;
+    if (discarded > 0) {
+      if (!_allowBranching) return false;
+      // Start a new branch: drop the moves after the shown position.
+      _line.removeRange(_cursor, _line.length);
+      _rawLine.removeRange(_cursor, _rawLine.length);
+      _positionKeys.removeRange(_cursor + 1, _positionKeys.length);
+    }
     final applied = _describe(_engine, m);
     _engine.make_move(m);
     _invalidate();
     _line.add(applied);
+    _rawLine.add(m);
+    _cursor++;
     _positionKeys.add(_position.repetitionKey);
-    _changed(MoveApplied(applied, source: source, silent: !notify), notify);
+    _changed(
+      MoveApplied(
+        applied,
+        source: source,
+        silent: !notify,
+        discardedPlies: discarded,
+      ),
+      notify,
+    );
     return true;
   }
 
@@ -326,9 +443,27 @@ class ChessBoardController extends ChangeNotifier {
     _startFen = startFen;
     _invalidate();
     _line.clear();
+    _rawLine.clear();
+    _cursor = 0;
     _positionKeys
       ..clear()
       ..add(_position.repetitionKey);
+  }
+
+  /// Moves the engine to the position after [ply] moves without recording
+  /// a change. Moves are replayed from [_rawLine], so this never consults
+  /// the move generator.
+  void _seek(int ply) {
+    if (ply == _cursor) return; // Keep the cache when nothing moves.
+    while (_cursor > ply) {
+      _engine.undo_move();
+      _cursor--;
+    }
+    while (_cursor < ply) {
+      _engine.make_move(_rawLine[_cursor]);
+      _cursor++;
+    }
+    _invalidate();
   }
 
   /// Must be called after every change to [_engine].
@@ -341,9 +476,16 @@ class ChessBoardController extends ChangeNotifier {
   }
 
   String _writePgn() {
+    // The result belongs to the end of the game, not the shown position.
+    final shown = _cursor;
+    _seek(_line.length);
+    final endResult = isGameOver ? result : null;
+    _seek(shown);
+
     final headers = <String, String>{
       ..._headers,
-      if (!_headers.containsKey('Result') && isGameOver) 'Result': result.pgn,
+      if (!_headers.containsKey('Result') && endResult != null)
+        'Result': endResult.pgn,
       if (_startFen != kInitialFen) ...{'SetUp': '1', 'FEN': _startFen},
     };
     final out = StringBuffer();
@@ -444,7 +586,8 @@ class _PositionCache {
   DrawReason? _computeDrawReason() {
     if (raw.isEmpty) return inCheck ? null : DrawReason.stalemate;
     if (_engine.insufficient_material) return DrawReason.insufficientMaterial;
-    final keys = _c._positionKeys;
+    // Only positions up to the one shown count towards repetition.
+    final keys = _c._positionKeys.take(_c._cursor + 1);
     final current = keys.last;
     if (keys.where((k) => k == current).length >= 3) {
       return DrawReason.threefoldRepetition;

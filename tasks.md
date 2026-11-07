@@ -29,8 +29,8 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Tests: legal and illegal moves, promotion required and accepted, castling, en passant, each draw type, undo on empty history, notification counts with and without `notify`, batching then `notifyListeners()`.
   - _Req 6. Design 4.2, 4.3_
 
-- [ ] 4. History navigation and branching
-  - `_line` + `_cursor`, `back`, `forward`, `goTo`, `goToStart`, `goToEnd`, `isViewingHistory`, `branchOnMoveWhileViewing`.
+- [x] 4. History navigation and branching
+  - `_line` + `_cursor`, `back`, `forward`, `goTo`, `goToStart`, `goToEnd`, `isViewingHistory`, `allowBranching`.
   - Tests: navigation keeps the line; move while viewing is rejected; branching cuts the line; `undo` only works live; property test that random navigation equals replaying the first N moves.
   - _Req 6. Design 4.1_
 

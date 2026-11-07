@@ -17,7 +17,7 @@
 library;
 
 export 'src/controller/board_change.dart'
-    show BoardChange, MoveApplied, MoveSource, PositionReplaced;
+    show BoardChange, MoveApplied, MoveSource, NavigatedTo, PositionReplaced;
 export 'src/controller/chess_board_controller.dart'
     show ChessBoardController, kInitialFen;
 export 'src/model/annotations.dart' show Arrow, MarkShape, SquareMark;

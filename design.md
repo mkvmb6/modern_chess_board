@@ -68,7 +68,7 @@ The controller keeps the full move line separately from the engine:
 When `_cursor == _line.length`, the board is "live". Navigating backward calls `undo()` on the engine and decrements the cursor. Navigating forward replays `_line[_cursor]`. `_line` stays intact, which gives non-destructive history navigation.
 
 - `undo()` removes the last move from `_line` (destructive) and is only allowed while live.
-- A user move while not live is rejected, unless `branchOnMoveWhileViewing` is true. In that case `_line` is cut at the cursor and the new move is appended.
+- A user move while not live is rejected, unless `allowBranching` is true. In that case `_line` is cut at the cursor and the new move is appended.
 - `goTo(int ply)`, `back()`, `forward()`, `goToStart()`, `goToEnd()`.
 - `isViewingHistory` is true when `_cursor < _line.length`.
 

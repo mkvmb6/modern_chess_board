@@ -30,7 +30,12 @@ sealed class BoardChange {
 /// A move was played.
 final class MoveApplied extends BoardChange {
   /// Creates a move change.
-  const MoveApplied(this.move, {required this.source, required super.silent});
+  const MoveApplied(
+    this.move, {
+    required this.source,
+    required super.silent,
+    this.discardedPlies = 0,
+  });
 
   /// The move that was played, with SAN and flags filled in.
   final BoardMove move;
@@ -38,12 +43,48 @@ final class MoveApplied extends BoardChange {
   /// Who played it.
   final MoveSource source;
 
+  /// How many later moves were discarded because the move started a new
+  /// branch from an earlier position. Zero for ordinary moves.
+  ///
+  /// See `ChessBoardController.allowBranching`.
+  final int discardedPlies;
+
+  /// Whether this move started a new branch, discarding later moves.
+  bool get isBranch => discardedPlies > 0;
+
   @override
-  String toString() => 'MoveApplied($move, $source, silent: $silent)';
+  String toString() =>
+      'MoveApplied($move, $source, silent: $silent'
+      '${isBranch ? ', discarded: $discardedPlies' : ''})';
 }
 
-/// The position changed in a way that is not a single forward move: undo,
-/// reset, or loading a FEN or PGN.
+/// The view moved through the game's history without changing the moves:
+/// `back`, `forward` or `goTo` on the controller.
+///
+/// After several silent navigations followed by one `notifyListeners()`,
+/// [fromPly] only covers the last step. Code that renders positions should
+/// compare against the position it last showed rather than rely on
+/// [fromPly].
+final class NavigatedTo extends BoardChange {
+  /// Creates a navigation change.
+  const NavigatedTo({
+    required this.fromPly,
+    required this.toPly,
+    required super.silent,
+  });
+
+  /// The ply shown before navigating.
+  final int fromPly;
+
+  /// The ply shown now.
+  final int toPly;
+
+  @override
+  String toString() => 'NavigatedTo($fromPly -> $toPly, silent: $silent)';
+}
+
+/// The position changed in a way that is not a single forward move or a
+/// history step: undo, reset, or loading a FEN or PGN.
 final class PositionReplaced extends BoardChange {
   /// Creates a position-replaced change.
   const PositionReplaced({required super.silent});
