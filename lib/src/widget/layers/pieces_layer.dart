@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../controller/chess_board_controller.dart';
+import '../../model/square.dart';
 import '../../pieces/piece_set.dart';
 import '../board_geometry.dart';
 
@@ -19,6 +21,7 @@ class PiecesLayer extends StatelessWidget {
     super.key,
     required this.controller,
     required this.positionChanges,
+    required this.hiddenSquare,
     required this.geometry,
     required this.pieceSet,
   });
@@ -28,6 +31,9 @@ class PiecesLayer extends StatelessWidget {
 
   /// Notifies when the position to show has changed.
   final Listenable positionChanges;
+
+  /// A square whose piece is not drawn, because it is being dragged.
+  final ValueListenable<Square?> hiddenSquare;
 
   /// Where squares are.
   final BoardGeometry geometry;
@@ -40,25 +46,26 @@ class PiecesLayer extends StatelessWidget {
     final set = pieceSet;
     if (set == null) return const SizedBox.expand();
     return ListenableBuilder(
-      listenable: positionChanges,
+      listenable: Listenable.merge([positionChanges, hiddenSquare]),
       builder: (context, _) => Stack(
         clipBehavior: Clip.none,
         children: [
           for (final MapEntry(key: square, value: piece)
               in controller.pieces.entries)
-            Positioned.fromRect(
-              key: ValueKey(square),
-              rect: geometry.squareRect(square),
-              child: RepaintBoundary(
-                child: ChessPieceView(
-                  piece: piece,
-                  size: geometry.squareSize,
-                  pieceSet: set,
-                  // Each square's semantics label names its piece.
-                  excludeFromSemantics: true,
+            if (square != hiddenSquare.value)
+              Positioned.fromRect(
+                key: ValueKey(square),
+                rect: geometry.squareRect(square),
+                child: RepaintBoundary(
+                  child: ChessPieceView(
+                    piece: piece,
+                    size: geometry.squareSize,
+                    pieceSet: set,
+                    // Each square's semantics label names its piece.
+                    excludeFromSemantics: true,
+                  ),
                 ),
               ),
-            ),
         ],
       ),
     );

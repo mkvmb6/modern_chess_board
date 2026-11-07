@@ -30,7 +30,11 @@ Offset centerOf(WidgetTester tester, Square square) {
               )
               .painter!
           as BoardSquaresPainter;
-  return tester.getTopLeft(find.byType(ChessBoard)) +
+  return tester.getTopLeft(
+        find.byWidgetPredicate(
+          (w) => w is CustomPaint && w.painter is BoardSquaresPainter,
+        ),
+      ) +
       painter.geometry.squareCenter(square);
 }
 
@@ -147,16 +151,20 @@ void main() {
     expect(selected(tester), isNull);
   });
 
-  testWidgets('a press on the selected piece that slides away keeps it '
-      'selected', (tester) async {
+  testWidgets('a press on the selected piece that slides and comes back '
+      'keeps it selected', (tester) async {
     final c = ChessBoardController();
     await pumpBoard(tester, ChessBoard(controller: c));
     await tapSquare(tester, Square.e2);
-    final gesture = await tester.startGesture(centerOf(tester, Square.e2));
+    final start = centerOf(tester, Square.e2);
+    final gesture = await tester.startGesture(start);
     await gesture.moveBy(const Offset(30, 0));
+    await tester.pump();
+    await gesture.moveTo(start);
     await gesture.up();
     await tester.pump();
-    expect(selected(tester), Square.e2);
+    expect(selected(tester), Square.e2, reason: 'a drag is not a tap');
+    expect(c.fen, kInitialFen);
   });
 
   testWidgets('a cancelled press on the selected piece keeps it selected', (

@@ -157,6 +157,18 @@ class BoardInteraction {
   /// pointer is cancelled or a second finger lands.
   void pressCancel() => _pressedSelected = false;
 
+  /// Drops a dragged piece from [from] on [to]. Makes the move if it is
+  /// legal; either way the selection is cleared, so an illegal drop snaps
+  /// back and a legal one leaves nothing selected. Returns what happened.
+  TapOutcome drop(Square from, Square to) {
+    clear();
+    final piece = controller.pieceAt(from);
+    if (piece == null || !canMove(piece.color)) return TapOutcome.ignored;
+    final legal = controller.legalMovesFrom(from).any((m) => m.to == to);
+    if (!legal) return TapOutcome.illegal;
+    return onMove(from, to) ? TapOutcome.moved : TapOutcome.illegal;
+  }
+
   /// A whole tap: a press that ends without dragging. Used by tests and by
   /// inputs without separate down and up events, such as screen readers.
   TapOutcome tap(Square square) {

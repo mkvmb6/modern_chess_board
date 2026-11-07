@@ -197,7 +197,7 @@ A user can move when all of these hold:
 **Drag visuals:**
 
 - The floating piece is drawn at `min(1.15, 1 + 4 / squareSize * 2)` scale, so it barely grows on small boards.
-- On touch devices it is lifted by half a square.
+- On touch devices it is lifted by half a square, so its lower edge still overlaps the square under the finger. The drop target is the square under the finger, as on every chess app; targeting the drawn piece would make the back rank unreachable on phones.
 - The cursor is `SystemMouseCursors.grabbing` while dragging and `grab` while hovering over a movable piece.
 
 **Promotion:**

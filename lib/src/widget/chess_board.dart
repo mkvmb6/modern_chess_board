@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 
 import '../controller/chess_board_controller.dart';
@@ -9,6 +10,7 @@ import '../theme/chess_board_theme.dart';
 import 'board_geometry.dart';
 import 'interaction/board_gesture_layer.dart';
 import 'interaction/board_interaction.dart';
+import 'interaction/drag_layer.dart';
 import 'layers/labels_layer.dart';
 import 'layers/pieces_layer.dart';
 import 'layers/squares_layer.dart';
@@ -132,6 +134,19 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
   /// Tells the pieces layer the position changed.
   final _ChangeSignal _positionChanges = _ChangeSignal();
 
+  /// The piece being dragged, or null. Updated on every pointer move; only
+  /// the drag layer and the gesture layer listen.
+  final ValueNotifier<DragInfo?> _drag = ValueNotifier(null);
+
+  /// The square the dragged piece came from, hidden while dragging. Only
+  /// changes when a drag starts or ends, so the pieces layer doesn't
+  /// rebuild on every pointer move.
+  final ValueNotifier<Square?> _draggedFrom = ValueNotifier(null);
+
+  /// The square a press started on and the pointer kind, while the press
+  /// could still become a drag of that square's piece.
+  (Square, PointerDeviceKind)? _pressOrigin;
+
   @override
   void initState() {
     super.initState();
@@ -192,6 +207,7 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
       ..readOnly = widget.readOnly
       ..interactiveSide = widget.interactiveSide
       ..revalidate();
+    if (_drag.value case final d? when !_canDragFrom(d.from)) _cancelDrag();
     if (widget.pieceSet != oldWidget.pieceSet &&
         widget.pieceSet != _loadingSet) {
       _load(widget.pieceSet);
@@ -204,6 +220,7 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
   /// features add their state here rather than resetting it elsewhere.
   void _resetEphemeralState() {
     _interaction.clear();
+    _cancelDrag();
   }
 
   /// The board's only controller listener. A changed position clears any
@@ -215,9 +232,12 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
     if (id != _seenChangeId) {
       _seenChangeId = id;
       _interaction.clear();
+      // A drag from the old position can't land in the new one.
+      _cancelDrag();
       _positionChanges.notify();
     } else {
       _interaction.revalidate();
+      if (_drag.value case final d? when !_canDragFrom(d.from)) _cancelDrag();
     }
   }
 
@@ -229,12 +249,77 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
     promotion: PieceType.queen,
   );
 
-  void _onPressDown(Square square) => _interaction.pressDown(square);
+  bool _canDragFrom(Square square) {
+    final piece = widget.controller.pieceAt(square);
+    return piece != null && _interaction.canMove(piece.color);
+  }
 
-  void _onPressUp({required bool dragged}) =>
+  void _onPressDown(Square square, PointerDeviceKind kind) {
+    final outcome = _interaction.pressDown(square);
+    // Only a press that leaves its piece selected can turn into a drag. A
+    // press that made a move, or landed on nothing movable, can't.
+    final dragsPiece =
+        outcome == TapOutcome.selected || outcome == TapOutcome.pressedSelected;
+    _pressOrigin = dragsPiece ? (square, kind) : null;
+  }
+
+  void _onDragStart(Offset position, BoardGeometry geometry) {
+    final origin = _pressOrigin;
+    if (origin == null) return;
+    final (from, kind) = origin;
+    final piece = widget.controller.pieceAt(from);
+    if (piece == null || !_canDragFrom(from)) return;
+    _drag.value = DragInfo(
+      from: from,
+      piece: piece,
+      position: position,
+      kind: kind,
+    );
+    _draggedFrom.value = from;
+  }
+
+  void _onDragUpdate(Offset position) {
+    final drag = _drag.value;
+    if (drag != null) _drag.value = drag.moveTo(position);
+  }
+
+  void _onPressUp(
+    Offset position,
+    BoardGeometry geometry, {
+    required bool dragged,
+  }) {
+    _pressOrigin = null;
+    final drag = _drag.value;
+    if (drag == null) {
       _interaction.pressUp(dragged: dragged);
+      return;
+    }
+    _endDrag();
+    // The drop target is the square under the finger or pointer, as on
+    // every chess app. On touch the piece is drawn half a square above the
+    // finger, so its lower edge still overlaps the target square, and
+    // targeting the piece instead would make the back rank unreachable.
+    final target = geometry.squareAt(position);
+    _interaction.pressUp(dragged: true);
+    if (target == null || target == drag.from) return; // Snap back.
+    _interaction.drop(drag.from, target);
+  }
 
-  void _onPressCancel() => _interaction.pressCancel();
+  void _onPressCancel() {
+    _pressOrigin = null;
+    _interaction.pressCancel();
+    _cancelDrag();
+  }
+
+  void _endDrag() {
+    _drag.value = null;
+    _draggedFrom.value = null;
+  }
+
+  void _cancelDrag() {
+    _pressOrigin = null;
+    if (_drag.value != null) _endDrag();
+  }
 
   @override
   Square? get debugSelection => _interaction.selection.value;
@@ -244,6 +329,8 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
     widget.controller.removeListener(_onControllerChanged);
     _interaction.dispose();
     _positionChanges.dispose();
+    _drag.dispose();
+    _draggedFrom.dispose();
     super.dispose();
   }
 
@@ -346,16 +433,38 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
               child: PiecesLayer(
                 controller: widget.controller,
                 positionChanges: _positionChanges,
+                hiddenSquare: _draggedFrom,
                 geometry: geometry,
                 pieceSet: _shownSet,
               ),
             ),
             Positioned.fill(
-              child: BoardGestureLayer(
-                geometry: geometry,
-                onPressDown: _onPressDown,
-                onPressUp: _onPressUp,
-                onPressCancel: _onPressCancel,
+              // Keeps per-move repaints of the floating piece from reaching
+              // the app content around the board.
+              child: RepaintBoundary(
+                child: DragLayer(
+                  drag: _drag,
+                  geometry: geometry,
+                  pieceSet: _shownSet,
+                ),
+              ),
+            ),
+            Positioned.fill(
+              // Rebuilds only when a drag starts or ends, not on every move.
+              child: ValueListenableBuilder<Square?>(
+                valueListenable: _draggedFrom,
+                builder: (context, draggedFrom, _) => BoardGestureLayer(
+                  geometry: geometry,
+                  canDragFrom: _canDragFrom,
+                  dragging: draggedFrom != null,
+                  refresh: _positionChanges,
+                  onPressDown: _onPressDown,
+                  onDragStart: (p) => _onDragStart(p, geometry),
+                  onDragUpdate: _onDragUpdate,
+                  onPressUp: (p, {required dragged}) =>
+                      _onPressUp(p, geometry, dragged: dragged),
+                  onPressCancel: _onPressCancel,
+                ),
               ),
             ),
           ],

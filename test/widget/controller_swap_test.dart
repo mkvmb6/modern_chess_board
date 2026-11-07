@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:modern_chess_board/modern_chess_board.dart';
+import 'package:modern_chess_board/src/widget/layers/squares_layer.dart';
 
 Widget host(ChessBoardController c) => MaterialApp(
   home: Material(
@@ -159,7 +160,11 @@ void main() {
     await settlePieces(tester);
     await tester.pumpWidget(board(b, BoardOrientation.black));
     // With black at the bottom, a1's rook is in the top-right square.
-    final origin = tester.getTopLeft(find.byType(ChessBoard));
+    final origin = tester.getTopLeft(
+      find.byWidgetPredicate(
+        (w) => w is CustomPaint && w.painter is BoardSquaresPainter,
+      ),
+    );
     final rook = tester
         .widgetList<ChessPieceView>(find.byType(ChessPieceView))
         .firstWhere((v) => v.piece == Piece.whiteRook);

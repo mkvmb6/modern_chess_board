@@ -83,7 +83,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Tests: every tap rule in R2; tapping an empty square with nothing selected causes no rebuild (`debugBuildCount`); read-only, game over, history view and interactive side each block moves while code moves still work; a controller swap clears the selection.
   - _Req 1, 2. Design 5.4_
 
-- [ ] 13. Drag and drop
+- [x] 13. Drag and drop
   - Drag threshold, floating piece (scale cap, touch lift), empty source square, drop legal/illegal/off board/cancel, grab and grabbing cursors. Claim the gesture arena once a press starts on a movable piece, so a board inside a scroll view never scrolls during a drag (raw `Listener` events never enter the arena).
   - Tests: a movement below the threshold counts as a tap; an illegal drop snaps back with the position unchanged; dragging replaces the tap selection; the source square is empty during the drag; scale ≤ 1.15 and overflow ≤ 4 px at 120 px board; cursor values from `MouseRegion`; a controller swap cancels an in-progress drag.
   - _Req 2, 3. Design 5.4_

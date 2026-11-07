@@ -41,7 +41,11 @@ Map<Square, Piece> shownPieces(WidgetTester tester) {
               .painter!
           as BoardSquaresPainter;
   final geometry = squares.geometry;
-  final origin = tester.getTopLeft(find.byType(ChessBoard));
+  final origin = tester.getTopLeft(
+    find.byWidgetPredicate(
+      (w) => w is CustomPaint && w.painter is BoardSquaresPainter,
+    ),
+  );
   final result = <Square, Piece>{};
   for (final view in tester.widgetList<ChessPieceView>(
     find.byType(ChessPieceView),
@@ -329,7 +333,11 @@ void main() {
       }
       // Pieces are inside the playing area, not the margin. Geometry is in
       // the board's local coordinates; piece rects are global.
-      final origin = tester.getTopLeft(find.byType(ChessBoard));
+      final origin = tester.getTopLeft(
+        find.byWidgetPredicate(
+          (w) => w is CustomPaint && w.painter is BoardSquaresPainter,
+        ),
+      );
       for (final e in find.byType(ChessPieceView).evaluate()) {
         final r = tester.getRect(find.byWidget(e.widget)).shift(-origin);
         expect(board.inflate(0.01).contains(r.topLeft), isTrue, reason: '$r');
