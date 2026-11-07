@@ -660,6 +660,9 @@ class _ThemeSwatch extends StatelessWidget {
                       for (final row in [true, false])
                         Expanded(
                           child: Row(
+                            // Without stretch, the empty squares would
+                            // collapse to zero height.
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               for (final light in [row, !row])
                                 Expanded(

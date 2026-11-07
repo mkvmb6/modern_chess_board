@@ -77,6 +77,32 @@ void main() {
     expect(state.controller.history, isEmpty);
   });
 
+  testWidgets('each theme tile shows a sample of its squares', (tester) async {
+    await pumpApp(tester);
+    await openOptions(tester);
+    await tester.pumpAndSettle();
+    final squares = [
+      for (final e
+          in find
+              .descendant(
+                of: find.byType(OptionsSheet),
+                matching: find.byType(ColoredBox),
+              )
+              .evaluate())
+        (
+          tester.getSize(find.byWidget(e.widget)),
+          (e.widget as ColoredBox).color,
+        ),
+    ].where((s) => s.$1.width >= 20).toList();
+    // Five themes, four squares each, all visible.
+    expect(squares, hasLength(20));
+    for (final (size, _) in squares) {
+      expect(size, const Size(24, 24));
+    }
+    expect(squares.first.$2, ChessBoardTheme.green.lightSquareColor);
+    expect(squares[1].$2, ChessBoardTheme.green.darkSquareColor);
+  });
+
   testWidgets('the options sheet changes the board', (tester) async {
     final state = await pumpApp(tester);
     await openOptions(tester);
