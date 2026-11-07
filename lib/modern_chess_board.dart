@@ -6,7 +6,19 @@
 /// ```dart
 /// import 'package:modern_chess_board/modern_chess_board.dart';
 /// ```
+///
+/// The underlying rules engine, `package:chess`, also defines `Piece`,
+/// `PieceType`, `Color` and `Move`. If you use the engine directly through
+/// the controller, import it with a prefix to avoid name clashes:
+///
+/// ```dart
+/// import 'package:chess/chess.dart' as chess;
+/// ```
 library;
 
-// Public API exports are added here as each component lands.
-// Everything under `src/` stays private unless exported from this file.
+export 'src/model/annotations.dart' show Arrow, MarkShape, SquareMark;
+export 'src/model/board_move.dart' show BoardMove, CastleSide;
+export 'src/model/game_status.dart'
+    show DrawReason, GameResult, GameStatus, SoundEvent;
+export 'src/model/piece.dart' show Piece, PieceColor, PieceType;
+export 'src/model/square.dart' show Square;

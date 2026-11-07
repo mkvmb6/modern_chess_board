@@ -48,7 +48,7 @@ The public barrel file exports only the public types. Everything else stays unde
 - `Square`: an immutable value object with file (0-7) and rank (0-7). `Square.tryParse('e4')` returns null for bad names, which is how arrows and marks ignore them (R5). Named constants (`Square.e4`) and all 64 squares in a list.
 - `PieceType` enum (pawn, knight, bishop, rook, queen, king), `PieceColor` enum (white, black), `Piece(color, type)` with value equality and a `code` such as `wK`.
 - `BoardMove`: from, to, optional promotion, plus SAN, captured piece, and flags (castle, en passant, promotion, check, mate) once the move is applied.
-- `Arrow(from, to, {color})`, `SquareMark(square, {color, shape: circle|fill})`. Both take square names as strings and resolve them safely.
+- `Arrow(from, to, {color})`, `SquareMark(square, {color, shape: circle|fill})` with `markedSquare`. Both take square names as strings and resolve them safely.
 - `GameStatus`: `ongoing`, `checkmate`, `stalemate`, `draw`. A `DrawReason` covers fifty-move, threefold repetition and insufficient material. `GameResult` is `1-0`, `0-1` or `1/2-1/2`.
 - `SoundEvent` enum: `move`, `capture`, `check`, `castle`, `promotion`, `gameEnd`, `illegal`.
 

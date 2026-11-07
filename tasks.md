@@ -16,7 +16,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
 
 ## Phase 1: Model and controller (pure Dart)
 
-- [ ] 2. Domain model
+- [x] 2. Domain model
   - `Square` (parse, tryParse, constants, all), `PieceType`, `PieceColor`, `Piece`, `BoardMove`, `Arrow`, `SquareMark`, `GameStatus`, `DrawReason`, `GameResult`, `SoundEvent`.
   - Tests: value equality, `tryParse` rejects bad names ("z9", "", "e44", null-like input), property test that random strings never throw.
   - _Req 5, 6. Design 3_
