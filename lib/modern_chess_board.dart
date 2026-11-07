@@ -16,6 +16,10 @@
 /// ```
 library;
 
+export 'src/controller/board_change.dart'
+    show BoardChange, MoveApplied, MoveSource, PositionReplaced;
+export 'src/controller/chess_board_controller.dart'
+    show ChessBoardController, kInitialFen;
 export 'src/model/annotations.dart' show Arrow, MarkShape, SquareMark;
 export 'src/model/board_move.dart' show BoardMove, CastleSide;
 export 'src/model/game_status.dart'

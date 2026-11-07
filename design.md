@@ -95,7 +95,14 @@ class NavigatedTo extends BoardChange { int fromPly; int toPly; }
 class PositionReplaced extends BoardChange {}  // reset, loadFen, loadPgn, undo
 ```
 
-`controller.lastChange` holds the most recent change. A `changeId` counter lets the widget tell a new change from a rebuild. If `notify: false` was used, the change is recorded as `PositionReplaced` with `silent = true`, so the board neither animates nor plays sound when the app finally calls `notifyListeners()` (R10).
+`controller.lastChange` holds the most recent change. A `changeId` counter lets the widget tell a new change from a rebuild. Every change carries a `silent` flag, set when `notify: false` was used. A silent move is still recorded as `MoveApplied`, so apps can inspect it, but the board neither animates nor plays sound for any silent change when the app finally calls `notifyListeners()` (R10).
+
+Engine workarounds, discovered while building task 3:
+
+- **PGN** is written and parsed by the controller, not by `package:chess`. The engine's `copy()` shares `Piece` objects, so `pgn()` on a copy corrupted the live board after a promotion. Its `load_pgn` also threw on some input and printed on a bad `FEN` header.
+- **FEN loading** adds checks the engine lacks: exactly one king per side, no pawns on back ranks, the side not to move not in check, castling rights only with king and rook at home, and a plausible en passant square.
+- **Repetition** uses the controller's own position keys, which include the en passant square only when a capture there is actually legal.
+- **Caching**: legal moves, status and draw reason are computed once per position.
 
 ### 4.4 Move classification (`move_classifier.dart`)
 

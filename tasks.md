@@ -21,7 +21,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Tests: value equality, `tryParse` rejects bad names ("z9", "", "e44", null-like input), property test that random strings never throw.
   - _Req 5, 6. Design 3_
 
-- [ ] 3. Controller core
+- [x] 3. Controller core
   - Wrap `Chess`. Read API: `fen`, `turn`, check/mate/stalemate/draw with reason, `isGameOver`, `result`, `history`, `pgn`, `pgnHeaders`, `halfMoveCount`, `lastMove`, `legalMovesFrom`, `pieceAt`, `engine`.
   - `move()` matched against verbose move generation (from/to/promotion fields only). `moveSan()`, `undo()`, `reset()`, `loadFen()`, `loadPgn()`.
   - Invalid FEN or PGN returns `false` and leaves state unchanged.
