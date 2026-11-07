@@ -1,0 +1,157 @@
+import 'package:flutter/widgets.dart';
+
+import '../../model/square.dart';
+import '../../pieces/piece_set.dart';
+import '../board_geometry.dart';
+import 'move_plan.dart';
+
+/// Runs move animations: one plan at a time, driven by one controller.
+///
+/// While a plan runs, its destination squares are reported in
+/// [hiddenSquares] so the pieces layer leaves them empty and a piece is
+/// never drawn twice. Starting a new plan while one is running commits the
+/// old one at once, so the board never shows a stale position.
+class MoveAnimator extends ChangeNotifier {
+  /// Creates an animator that ticks with [vsync].
+  MoveAnimator({required TickerProvider vsync})
+    : _controller = AnimationController(vsync: vsync) {
+    _controller.addStatusListener(_onStatus);
+  }
+
+  final AnimationController _controller;
+
+  /// Progress of the running plan, from 0 to 1.
+  late final Animation<double> progress = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeInOutCubic,
+  );
+
+  /// Opacity of captured pieces: gone in the first 60% of the move, so
+  /// they don't overlap the arriving piece half-transparently.
+  late final Animation<double> fadeOut = ReverseAnimation(
+    CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0, 0.6, curve: Curves.easeOut),
+    ),
+  );
+
+  /// The running plan, or null.
+  MovePlan? get plan => _plan;
+  MovePlan? _plan;
+
+  /// Squares the pieces layer must not draw while the plan runs.
+  Set<Square> get hiddenSquares => _plan?.animatedSquares ?? const {};
+
+  /// Whether a plan is running.
+  bool get isAnimating => _plan != null;
+
+  /// Plays [plan] over [duration]. A zero duration, or an empty plan, ends
+  /// any running animation and shows the final position at once.
+  void play(MovePlan plan, Duration duration) {
+    finish();
+    if (plan.isEmpty || duration == Duration.zero) return;
+    _plan = plan;
+    _controller
+      ..duration = duration
+      ..forward(from: 0);
+    notifyListeners();
+  }
+
+  /// Ends the running animation and shows the final position.
+  void finish() {
+    if (_plan == null) return;
+    _plan = null;
+    _controller.stop();
+    _controller.value = 0;
+    notifyListeners();
+  }
+
+  void _onStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) finish();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+}
+
+/// Draws the pieces of the running animation: sliding pieces and captured
+/// pieces fading out. Takes no input.
+class MoveAnimationLayer extends StatelessWidget {
+  /// Creates the layer.
+  const MoveAnimationLayer({
+    super.key,
+    required this.animator,
+    required this.geometry,
+    required this.pieceSet,
+  });
+
+  /// The animator to follow.
+  final MoveAnimator animator;
+
+  /// Where squares are.
+  final BoardGeometry geometry;
+
+  /// The artwork, or null while loading.
+  final PieceSet? pieceSet;
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    child: RepaintBoundary(
+      child: ListenableBuilder(
+        listenable: Listenable.merge([animator, animator.progress]),
+        builder: (context, _) {
+          final plan = animator.plan;
+          final set = pieceSet;
+          if (plan == null || set == null) return const SizedBox.expand();
+          final t = animator.progress.value;
+          final size = geometry.squareSize;
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // Captured pieces fade under the arriving piece.
+              for (final fade in plan.fading)
+                Positioned.fromRect(
+                  rect: geometry.squareRect(fade.square),
+                  child: FadeTransition(
+                    opacity: animator.fadeOut,
+                    child: ChessPieceView(
+                      piece: fade.piece,
+                      size: size,
+                      pieceSet: set,
+                      excludeFromSemantics: true,
+                    ),
+                  ),
+                ),
+              for (final slide in plan.moving)
+                Positioned.fromRect(
+                  rect:
+                      Offset.lerp(
+                        geometry.squareOrigin(slide.from),
+                        geometry.squareOrigin(slide.to),
+                        t,
+                      )! &
+                      Size.square(size),
+                  child: ChessPieceView(
+                    piece: slide.piece,
+                    size: size,
+                    pieceSet: set,
+                    excludeFromSemantics: true,
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    ),
+  );
+}
+
+/// The duration to animate with: [requested], or zero when the platform
+/// asks for reduced motion.
+Duration effectiveAnimationDuration(BuildContext context, Duration requested) {
+  final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+  return reduce ? Duration.zero : requested;
+}

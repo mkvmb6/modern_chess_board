@@ -204,7 +204,8 @@ void main() {
       final c = ChessBoardController();
       await pumpBoard(tester, ChessBoard(controller: c));
       c.move(Square.e2, Square.e4);
-      await tester.pump();
+      // The move animates; check the board once it has landed.
+      await tester.pumpAndSettle();
       expect(shownPieces(tester), c.pieces);
       expect(shownPieces(tester)[Square.e4], Piece.whitePawn);
       expect(shownPieces(tester)[Square.e2], isNull);

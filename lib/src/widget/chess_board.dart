@@ -11,6 +11,8 @@ import '../model/piece.dart';
 import '../model/square.dart';
 import '../pieces/piece_set.dart';
 import '../theme/chess_board_theme.dart';
+import 'animation/move_animator.dart';
+import 'animation/move_plan.dart';
 import 'board_geometry.dart';
 import 'interaction/board_gesture_layer.dart';
 import 'interaction/board_interaction.dart';
@@ -55,6 +57,7 @@ class ChessBoard extends StatefulWidget {
     this.onMove,
     this.onGameEnd,
     this.showLastMove = true,
+    this.animationDuration = const Duration(milliseconds: 150),
   });
 
   /// The game shown on the board.
@@ -127,6 +130,12 @@ class ChessBoard extends StatefulWidget {
   /// Whether the from and to squares of the last move are highlighted.
   final bool showLastMove;
 
+  /// How long a move takes to animate when made by tap or through the
+  /// controller. Dragged moves never animate, since the user already moved
+  /// the piece. [Duration.zero] turns animation off, and so does the
+  /// platform's reduced-motion setting.
+  final Duration animationDuration;
+
   /// The theme with the shortcut color parameters applied.
   ChessBoardTheme get effectiveTheme =>
       lightSquareColor == null &&
@@ -155,7 +164,20 @@ abstract interface class BoardStateDebug {
 @visibleForTesting
 int debugBoardBuildCount = 0;
 
-class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
+class _ChessBoardState extends State<ChessBoard>
+    with SingleTickerProviderStateMixin
+    implements BoardStateDebug {
+  /// Runs move animations.
+  late final MoveAnimator _animation = MoveAnimator(vsync: this);
+
+  /// The pieces as last drawn, so the next move's animation knows what
+  /// was on the board before it.
+  Map<Square, Piece> _shownPieces = const {};
+
+  /// Set while a drop is being applied, so the move it makes doesn't
+  /// animate.
+  bool _dropping = false;
+
   /// The set currently drawn. Stays on the previous set while a new one
   /// loads, and is null only before the first set is ready.
   PieceSet? _shownSet;
@@ -188,7 +210,7 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
 
   /// The square left empty on the board, kept apart from [_draggedFrom] so a
   /// waiting promotion doesn't show the grabbing cursor.
-  final ValueNotifier<Square?> _hiddenSquare = ValueNotifier(null);
+  final ValueNotifier<Set<Square>> _hiddenSquares = ValueNotifier(const {});
 
   /// The square under a hovering mouse, for the hover tint.
   final ValueNotifier<Square?> _hover = ValueNotifier(null);
@@ -243,6 +265,8 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
     widget.controller.addListener(_onControllerChanged);
     _draggedFrom.addListener(_syncHiddenSquare);
     _promotion.addListener(_syncHiddenSquare);
+    _animation.addListener(_syncHiddenSquare);
+    _shownPieces = widget.controller.pieces;
   }
 
   /// Loads [ChessBoard.initialFen] into a controller that hasn't been used
@@ -304,6 +328,9 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
   /// running animations. Called when the controller is swapped. Later
   /// features add their state here rather than resetting it elsewhere.
   void _resetEphemeralState() {
+    _animation.finish();
+    _dropping = false;
+    _shownPieces = widget.controller.pieces;
     _cancelPromotion();
     _interaction.clear();
     _cancelDrag();
@@ -328,6 +355,32 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
     if (end != null) widget.onGameEnd?.call(end);
   }
 
+  /// Starts the animation for the change just seen, if it is a move that
+  /// should animate: any non-silent move except one the user dragged. A
+  /// running animation is finished first, so the board never shows a stale
+  /// position. Other changes (loading, undo, reset, navigation) snap.
+  void _planAnimation(int previousId) {
+    final c = widget.controller;
+    final before = _shownPieces;
+    _shownPieces = c.pieces;
+    final change = c.lastChange;
+    final dragged = _dropping;
+    _dropping = false;
+    // Several changes coalesced into one notification (for example a
+    // silent move followed by a notified one) can't be shown as a single
+    // slide from the position last drawn, so they snap.
+    final single = c.changeId == previousId + 1;
+    if (change is! MoveApplied || change.silent || dragged || !single) {
+      _animation.finish();
+      return;
+    }
+    final duration = effectiveAnimationDuration(
+      context,
+      widget.animationDuration,
+    );
+    _animation.play(MovePlan.forMove(change.move, before: before), duration);
+  }
+
   /// The board's only controller listener. A changed position clears any
   /// selection (it refers to the old position) and redraws the pieces.
   /// Notifications that change no position, such as toggling
@@ -335,11 +388,13 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
   void _onControllerChanged() {
     final id = _interaction.controller.changeId;
     if (id != _seenChangeId) {
+      final previousId = _seenChangeId;
       _seenChangeId = id;
       _interaction.clear();
       // A drag from the old position can't land in the new one.
       _cancelDrag();
       _cancelPromotion();
+      _planAnimation(previousId);
       _positionChanges.notify();
       _reportChange();
     } else {
@@ -373,18 +428,29 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
     final pending = _promotion.value;
     if (pending == null) return;
     _promotion.value = null;
+    // The pawn already waited on its way; sliding it again from its
+    // origin would look like a hiccup. Land it in place.
+    _dropping = true;
     applyUserMove(widget.controller, pending.from, pending.to, promotion: type);
+    _dropping = false;
   }
 
   void _cancelPromotion() {
     if (_promotion.value == null) return;
     _promotion.value = null;
+    _dropping = false;
   }
 
   /// The square whose piece the pieces layer leaves out: the dragged piece's
   /// origin, or the pawn waiting for its promotion choice.
-  void _syncHiddenSquare() =>
-      _hiddenSquare.value = _draggedFrom.value ?? _promotion.value?.from;
+  void _syncHiddenSquare() {
+    final hidden = <Square>{
+      ?_draggedFrom.value,
+      ?_promotion.value?.from,
+      ..._animation.hiddenSquares,
+    };
+    if (!setEquals(hidden, _hiddenSquares.value)) _hiddenSquares.value = hidden;
+  }
 
   /// Closes the picker if its pawn can no longer move, for example after the
   /// board became read-only.
@@ -409,6 +475,9 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
   }
 
   void _onPressDown(Square square, PointerDeviceKind kind) {
+    // A piece still sliding lands at once, so it can be pressed or
+    // dragged without showing twice.
+    _animation.finish();
     final outcome = _interaction.pressDown(square);
     // Only a press that leaves its piece selected can turn into a drag. A
     // press that made a move, or landed on nothing movable, can't.
@@ -473,7 +542,12 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
     final target = geometry.squareAt(position);
     _interaction.pressUp(dragged: true);
     if (target == null || target == drag.from) return; // Snap back.
+    // The user already moved the piece: the resulting move doesn't
+    // animate. A drop onto a promotion square waits for the choice, which
+    // then lands without animating too.
+    _dropping = true;
     _interaction.drop(drag.from, target);
+    if (_promotion.value == null) _dropping = false;
   }
 
   void _onPressCancel() {
@@ -504,7 +578,8 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
     _drag.dispose();
     _draggedFrom.dispose();
     _promotion.dispose();
-    _hiddenSquare.dispose();
+    _hiddenSquares.dispose();
+    _animation.dispose();
     _hover.dispose();
     _dropTarget.dispose();
     super.dispose();
@@ -624,7 +699,14 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
               child: PiecesLayer(
                 controller: widget.controller,
                 positionChanges: _positionChanges,
-                hiddenSquare: _hiddenSquare,
+                hiddenSquares: _hiddenSquares,
+                geometry: geometry,
+                pieceSet: _shownSet,
+              ),
+            ),
+            Positioned.fill(
+              child: MoveAnimationLayer(
+                animator: _animation,
                 geometry: geometry,
                 pieceSet: _shownSet,
               ),

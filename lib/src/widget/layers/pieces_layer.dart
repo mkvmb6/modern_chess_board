@@ -21,7 +21,7 @@ class PiecesLayer extends StatelessWidget {
     super.key,
     required this.controller,
     required this.positionChanges,
-    required this.hiddenSquare,
+    required this.hiddenSquares,
     required this.geometry,
     required this.pieceSet,
   });
@@ -32,8 +32,10 @@ class PiecesLayer extends StatelessWidget {
   /// Notifies when the position to show has changed.
   final Listenable positionChanges;
 
-  /// A square whose piece is not drawn, because it is being dragged.
-  final ValueListenable<Square?> hiddenSquare;
+  /// Squares whose piece is not drawn here: the dragged piece's origin, a
+  /// pawn waiting for its promotion choice, or squares an animation is
+  /// drawing.
+  final ValueListenable<Set<Square>> hiddenSquares;
 
   /// Where squares are.
   final BoardGeometry geometry;
@@ -46,13 +48,13 @@ class PiecesLayer extends StatelessWidget {
     final set = pieceSet;
     if (set == null) return const SizedBox.expand();
     return ListenableBuilder(
-      listenable: Listenable.merge([positionChanges, hiddenSquare]),
+      listenable: Listenable.merge([positionChanges, hiddenSquares]),
       builder: (context, _) => Stack(
         clipBehavior: Clip.none,
         children: [
           for (final MapEntry(key: square, value: piece)
               in controller.pieces.entries)
-            if (square != hiddenSquare.value)
+            if (!hiddenSquares.value.contains(square))
               Positioned.fromRect(
                 key: ValueKey(square),
                 rect: geometry.squareRect(square),
