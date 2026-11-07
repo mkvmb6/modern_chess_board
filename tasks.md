@@ -53,7 +53,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Tests: incomplete image map throws and lists the missing codes; equality rules; the standard set precaches and renders all 12 SVGs; size and aspect ratio honored; semantics label and opt-out; failed loads retry.
   - _Req 8. Design 7_
 
-- [ ] 8. Sound dispatcher and haptics wrapper
+- [x] 8. Sound dispatcher and haptics wrapper
   - `ChessSoundPack`, `SilentSoundPack`, `SafeSoundDispatcher`, `BoardHaptics`.
   - Tests: sync throw and async throw are both caught and reported through `FlutterError.onError`, and neither is rethrown; the silent pack does nothing.
   - _Req 10. Design 9_

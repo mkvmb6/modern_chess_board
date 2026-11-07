@@ -28,5 +28,6 @@ export 'src/model/piece.dart' show Piece, PieceColor, PieceType;
 export 'src/model/square.dart' show Square;
 export 'src/pieces/piece_set.dart'
     show ChessPieceView, PieceSet, PieceWidgetBuilder;
+export 'src/sound/chess_sound_pack.dart' show ChessSoundPack, SilentSoundPack;
 export 'src/theme/chess_board_theme.dart'
     show AnnotationColors, ChessBoardTheme;

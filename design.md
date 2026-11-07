@@ -322,12 +322,13 @@ All three modes go through `BoardGeometry`, so they follow orientation.
 
 ```dart
 abstract class ChessSoundPack { FutureOr<void> play(SoundEvent event); }
-class SilentSoundPack implements ChessSoundPack { ... }  // default
+class SilentSoundPack extends ChessSoundPack { ... }  // default
+// ChessSoundPack.callback((event) => ...) for quick setups.
 ```
 
 `SafeSoundDispatcher.dispatch(event)` behaves like this:
 
-- It calls `pack.play` inside `try`. If the call returns a `Future`, it attaches `.catchError`.
+- It calls `pack.play` inside `try`. If the call returns a `Future`, it listens for its error. The call runs in the caller's zone, not a private error zone: Dart never passes errors between error zones, so a private zone would hang packs that await a player created earlier. Errors in work a pack starts without returning it go to the app's `PlatformDispatcher.onError`.
 - Errors are reported through `FlutterError.reportError` with the library name `modern_chess_board`, and are never rethrown.
 - Exactly one event is sent per successful move, triggered by `MoveApplied` with `silent == false`. `illegal` is sent for rejected user drops and taps on an illegal destination while a piece is selected.
 - No event is sent for `PositionReplaced` or `NavigatedTo` (R10).
