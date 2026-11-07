@@ -48,9 +48,9 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Tests: equality, copyWith round trip, clearing optional colors, each preset distinct, legibility on both square colors (contrast for small marks, perceptual distance for tints and arrows, pairwise tint distance), label tone, lerp.
   - _Req 7. Design 6_
 
-- [ ] 7. Piece sets
-  - `PieceSet` (standard SVG, `fromMap`, `builder`), equality, `preload()`.
-  - Tests: `fromMap` with 11 entries throws and lists the missing code; equality rules; the standard set renders all 12 SVGs without errors (widget test using `flutter_svg`'s test loader).
+- [x] 7. Piece sets
+  - `PieceSet` (standard SVG, `svgAssets`, `images`, `builder`), `ChessPieceView`, equality, `precache()`.
+  - Tests: incomplete image map throws and lists the missing codes; equality rules; the standard set precaches and renders all 12 SVGs; size and aspect ratio honored; semantics label and opt-out; failed loads retry.
   - _Req 8. Design 7_
 
 - [ ] 8. Sound dispatcher and haptics wrapper

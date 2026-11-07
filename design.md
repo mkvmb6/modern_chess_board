@@ -27,7 +27,7 @@ modern_chess_board/
       controller/   chess_board_controller.dart, history.dart,
                     move_classifier.dart, notation.dart
       theme/        chess_board_theme.dart (with presets), color_math.dart
-      pieces/       piece_set.dart, svg_piece_set.dart, piece_preloader.dart
+      pieces/       piece_set.dart (sets, SVG cache, ChessPieceView)
       widget/       chess_board.dart, board_state.dart, board_geometry.dart,
                     interaction/ (tap, drag, premove, annotation_drawing, keyboard)
                     layers/ (squares, highlights, pieces, arrows, labels,
@@ -277,19 +277,31 @@ Presets: `green` (the default), `brown`, `blue`, `purple`, `monochrome`. Each on
 
 ```dart
 abstract class PieceSet {
-  Widget build(BuildContext, Piece piece, double size);
-  Future<void> preload(BuildContext);
-  static const PieceSet standard = SvgPieceSet.package();
-  factory PieceSet.fromMap(Map<Piece, Widget Function(double size)> map);
-  factory PieceSet.builder(Widget Function(BuildContext, Piece, double) b, {Object? id});
+  Widget build(BuildContext context, Piece piece, double size);
+  Future<void> precache(BuildContext context);
+  static const PieceSet standard = PieceSet.svgAssets(
+      'assets/pieces/default', package: 'modern_chess_board');
+  const factory PieceSet.svgAssets(String directory, {String? package});
+  factory PieceSet.images(Map<Piece, ImageProvider> images);
+  const factory PieceSet.builder(PieceWidgetBuilder builder,
+      {Object? id, Future<void> Function(BuildContext)? precache});
 }
+
+class ChessPieceView extends StatelessWidget { /* piece + label */ }
 ```
 
-- `SvgPieceSet.package()` loads `packages/modern_chess_board/assets/pieces/default/{code}.svg`.
-- `fromMap` validates the map at construction and throws an `ArgumentError` listing the missing codes, for example "missing: wQ, bN".
-- Equality: map sets compare by their entries. Builder sets compare by `id`, falling back to identity. The standard set is a const singleton.
-- Preloading: `SvgPieceSet.preload` calls `vg.loadPicture(SvgAssetLoader(path), context)` for all 12 assets, which warms `flutter_svg`'s cache. The board preloads in `didChangeDependencies` and whenever `pieceSet` changes. Until the 12 loads finish, it keeps showing the previous set, so pieces don't flicker (R8). On the very first frame, pieces stay hidden until preloading completes. That usually takes a single frame.
-- Semantics: each piece widget is wrapped in `Semantics(label: 'white king')` (R11).
+This replaces an earlier `fromMap(Map<Piece, Widget Function(double)>)` plan. Widget closures could neither be precached nor compared by value, while these three constructors can.
+
+- `svgAssets` covers the common case of a folder of piece files. A trailing `/` on the directory is ignored for both paths and equality.
+- `images` checks the map when it is built. An incomplete map throws an `ArgumentError` naming the missing codes, for example "missing: wQ, bN".
+- Equality: SVG sets compare by directory and package, image sets by their providers, and builder sets by `id`, falling back to identity. The standard set is a const singleton.
+- Precaching SVG sets: `precache` decodes all 12 SVGs with `vg.loadPicture` into a shared cache. The cache lives for the whole app; it is 12 small pictures per set. If one piece fails, the whole set fails, and the set can be retried later.
+  - After that, `build` paints the decoded picture directly. It scales the whole picture by one factor, centres it like `BoxFit.contain`, and stays inside the `size` it is given.
+  - Before precaching finishes, `build` falls back to `SvgPicture.asset`.
+  - Because pictures are shared by every board, custom SVGs must not depend on `<text>` or `currentColor`.
+- Precaching image sets uses `precacheImage`, and builder sets run an optional hook.
+- When the board precaches: in `didChangeDependencies` and whenever `pieceSet` changes. Until the new set is ready, the board keeps showing the previous one, so pieces don't flicker (R8).
+- Semantics: `ChessPieceView` labels the piece, for example "white king". The board passes `excludeFromSemantics: true`, because each square's own label already names its piece ("e4, white pawn"), so nothing is read twice (R11).
 
 **The provided SVGs:**
 
