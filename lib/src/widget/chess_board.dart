@@ -165,10 +165,38 @@ abstract interface class BoardStateDebug {
 int debugBoardBuildCount = 0;
 
 class _ChessBoardState extends State<ChessBoard>
-    with SingleTickerProviderStateMixin
+    with TickerProviderStateMixin
     implements BoardStateDebug {
   /// Runs move animations.
   late final MoveAnimator _animation = MoveAnimator(vsync: this);
+
+  /// Drives a board flip; at 1 when not flipping.
+  late final AnimationController _flip = AnimationController(
+    vsync: this,
+    value: 1,
+  );
+
+  late final CurvedAnimation _flipCurve = CurvedAnimation(
+    parent: _flip,
+    curve: Curves.easeInOutCubic,
+  );
+
+  /// Which way the running flip turns. Flips from rest turn clockwise; a
+  /// flip reversed part way turns the other way, so pieces retrace their
+  /// arc.
+  bool _flipClockwise = true;
+
+  /// The geometry of the last build, used to re-aim a drag after a flip.
+  BoardGeometry? _lastGeometry;
+
+  /// Overlay opacity during a flip: fades out over the first half and
+  /// back in over the second, fully visible when not flipping.
+  late final Animation<double> _overlayOpacity = _flip.drive(
+    TweenSequence([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 1),
+    ]),
+  );
 
   /// The pieces as last drawn, so the next move's animation knows what
   /// was on the board before it.
@@ -218,6 +246,12 @@ class _ChessBoardState extends State<ChessBoard>
   /// The square under a dragged piece and whether it is a legal drop.
   /// Changes only when the pointer crosses into another square.
   final ValueNotifier<DropTarget?> _dropTarget = ValueNotifier(null);
+
+  /// Fades [child] out and back in while the board flips, so labels,
+  /// highlights and arrows (which switch to the new orientation at once)
+  /// never sit on squares the turning pieces haven't reached.
+  Widget _whileNotFlipping(Widget child) =>
+      FadeTransition(opacity: _overlayOpacity, child: child);
 
   /// A highlight painter that repaints only when the position, selection or
   /// hover changes, and only if what it would paint actually differs.
@@ -301,6 +335,34 @@ class _ChessBoardState extends State<ChessBoard>
   @override
   void didUpdateWidget(ChessBoard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.orientation != oldWidget.orientation) {
+      // Twice a move, capped so a slow custom move duration doesn't make
+      // the flip drag.
+      final requested = widget.animationDuration * 2;
+      const cap = Duration(milliseconds: 500);
+      final duration = effectiveAnimationDuration(
+        context,
+        requested > cap ? cap : requested,
+      );
+      // A move in flight lands first, so only the flip moves pieces. A drag
+      // in progress carries on: the floating piece stays under the finger
+      // and drops on whatever square is there in the new orientation.
+      _animation.finish();
+      _retargetAfterFlip();
+      if (duration == Duration.zero) {
+        _flip.value = 1;
+      } else {
+        // Flipping again mid-flip turns back from where the pieces are:
+        // the curve is point-symmetric, so 1 - t with the turn reversed
+        // continues along the same arc without a jump.
+        final reversing = _flip.isAnimating;
+        _flipClockwise = reversing ? !_flipClockwise : true;
+        final from = reversing ? 1 - _flip.value : 0.0;
+        _flip
+          ..duration = duration
+          ..forward(from: from);
+      }
+    }
     if (widget.controller != oldWidget.controller) {
       oldWidget.controller.removeListener(_onControllerChanged);
       // A fresh controller for a new game gets the initial position too;
@@ -323,12 +385,27 @@ class _ChessBoardState extends State<ChessBoard>
     }
   }
 
+  /// After a flip the squares move under a resting pointer, so the drop
+  /// target and hover square are recomputed for the new layout once it has
+  /// been built.
+  void _retargetAfterFlip() {
+    _hover.value = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final drag = _drag.value;
+      final geometry = _lastGeometry;
+      if (drag == null || geometry == null) return;
+      _updateDropTarget(drag.from, drag.position, geometry);
+    });
+  }
+
   /// Clears everything the board holds about the current interaction:
   /// selection, drag, pending promotion, premove, hint, user drawings and
   /// running animations. Called when the controller is swapped. Later
   /// features add their state here rather than resetting it elsewhere.
   void _resetEphemeralState() {
     _animation.finish();
+    _flip.value = 1;
     _dropping = false;
     _shownPieces = widget.controller.pieces;
     _cancelPromotion();
@@ -370,7 +447,21 @@ class _ChessBoardState extends State<ChessBoard>
     // silent move followed by a notified one) can't be shown as a single
     // slide from the position last drawn, so they snap.
     final single = c.changeId == previousId + 1;
-    if (change is! MoveApplied || change.silent || dragged || !single) {
+    final plan = !single || change.silent || dragged
+        ? null
+        : switch (change) {
+            MoveApplied(:final move) => MovePlan.forMove(move, before: before),
+            // One step through history animates like a move, forward or
+            // back; longer jumps snap.
+            NavigatedTo(:final fromPly, :final toPly)
+                when toPly == fromPly + 1 =>
+              MovePlan.forMove(c.fullLine[fromPly], before: before),
+            NavigatedTo(:final fromPly, :final toPly)
+                when toPly == fromPly - 1 =>
+              MovePlan.forUndo(c.fullLine[toPly], after: before),
+            _ => null,
+          };
+    if (plan == null) {
       _animation.finish();
       return;
     }
@@ -378,7 +469,7 @@ class _ChessBoardState extends State<ChessBoard>
       context,
       widget.animationDuration,
     );
-    _animation.play(MovePlan.forMove(change.move, before: before), duration);
+    _animation.play(plan, duration);
   }
 
   /// The board's only controller listener. A changed position clears any
@@ -581,6 +672,8 @@ class _ChessBoardState extends State<ChessBoard>
     _hiddenSquares.dispose();
     _animation.dispose();
     _hover.dispose();
+    _flipCurve.dispose();
+    _flip.dispose();
     _dropTarget.dispose();
     super.dispose();
   }
@@ -633,6 +726,7 @@ class _ChessBoardState extends State<ChessBoard>
       coordinates: widget.coordinates,
       builder: (context, metrics) {
         final geometry = metrics.geometry(widget.orientation);
+        _lastGeometry = geometry;
         final labels = layoutBoardLabels(
           metrics: metrics,
           orientation: widget.orientation,
@@ -654,9 +748,11 @@ class _ChessBoardState extends State<ChessBoard>
               ),
             ),
             Positioned.fill(
-              child: _highlightLayer(
-                theme,
-                (h) => BoardTintsPainter(geometry: geometry, highlights: h),
+              child: _whileNotFlipping(
+                _highlightLayer(
+                  theme,
+                  (h) => BoardTintsPainter(geometry: geometry, highlights: h),
+                ),
               ),
             ),
             Positioned.fill(
@@ -670,27 +766,29 @@ class _ChessBoardState extends State<ChessBoard>
             ),
             if (labels.isNotEmpty)
               Positioned.fill(
-                child: RepaintBoundary(
-                  child: CustomPaint(
-                    painter: BoardLabelsPainter(
-                      labels: labels,
-                      // Inherit the app's font family; size, weight and
-                      // line height are the board's. Colors come per label.
-                      style:
-                          (_isFallbackStyle(ambientStyle)
-                                  ? const TextStyle()
-                                  : ambientStyle)
-                              .merge(
-                                TextStyle(
-                                  fontSize: metrics.labelFontSize,
-                                  fontWeight: FontWeight.w600,
-                                  height: 1,
-                                  letterSpacing: 0,
-                                  decoration: TextDecoration.none,
+                child: _whileNotFlipping(
+                  RepaintBoundary(
+                    child: CustomPaint(
+                      painter: BoardLabelsPainter(
+                        labels: labels,
+                        // Inherit the app's font family; size, weight and
+                        // line height are the board's. Colors come per label.
+                        style:
+                            (_isFallbackStyle(ambientStyle)
+                                    ? const TextStyle()
+                                    : ambientStyle)
+                                .merge(
+                                  TextStyle(
+                                    fontSize: metrics.labelFontSize,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1,
+                                    letterSpacing: 0,
+                                    decoration: TextDecoration.none,
+                                  ),
                                 ),
-                              ),
-                      marginColor: theme.marginColor,
-                      metrics: metrics,
+                        marginColor: theme.marginColor,
+                        metrics: metrics,
+                      ),
                     ),
                   ),
                 ),
@@ -702,6 +800,8 @@ class _ChessBoardState extends State<ChessBoard>
                 hiddenSquares: _hiddenSquares,
                 geometry: geometry,
                 pieceSet: _shownSet,
+                flip: _flipCurve,
+                flipClockwise: _flipClockwise,
               ),
             ),
             Positioned.fill(
@@ -709,12 +809,16 @@ class _ChessBoardState extends State<ChessBoard>
                 animator: _animation,
                 geometry: geometry,
                 pieceSet: _shownSet,
+                flip: _flipCurve,
+                flipClockwise: _flipClockwise,
               ),
             ),
             Positioned.fill(
-              child: _highlightLayer(
-                theme,
-                (h) => BoardMarkersPainter(geometry: geometry, highlights: h),
+              child: _whileNotFlipping(
+                _highlightLayer(
+                  theme,
+                  (h) => BoardMarkersPainter(geometry: geometry, highlights: h),
+                ),
               ),
             ),
             Positioned.fill(
@@ -730,54 +834,68 @@ class _ChessBoardState extends State<ChessBoard>
             ),
             Positioned.fill(
               // Rebuilds only when a drag starts or ends, not on every move.
-              child: ValueListenableBuilder<Square?>(
-                valueListenable: _draggedFrom,
-                builder: (context, draggedFrom, _) => BoardGestureLayer(
-                  geometry: geometry,
-                  canDragFrom: _canDragFrom,
-                  dragging: draggedFrom != null,
-                  refresh: _positionChanges,
-                  onPressDown: _onPressDown,
-                  onDragStart: (p) => _onDragStart(p, geometry),
-                  onDragUpdate: (p) => _onDragUpdate(p, geometry),
-                  onPressUp: (p, {required dragged}) =>
-                      _onPressUp(p, geometry, dragged: dragged),
-                  onPressCancel: _onPressCancel,
-                  onHoverSquare: (s) => _hover.value = s,
+              // Input waits out the short flip, so a tap never lands on a
+              // square whose piece is still turning.
+              child: _IgnoreWhileFlipping(
+                flip: _flip,
+                child: ValueListenableBuilder<Square?>(
+                  valueListenable: _draggedFrom,
+                  builder: (context, draggedFrom, _) => BoardGestureLayer(
+                    geometry: geometry,
+                    canDragFrom: _canDragFrom,
+                    dragging: draggedFrom != null,
+                    refresh: _positionChanges,
+                    onPressDown: _onPressDown,
+                    onDragStart: (p) => _onDragStart(p, geometry),
+                    onDragUpdate: (p) => _onDragUpdate(p, geometry),
+                    onPressUp: (p, {required dragged}) =>
+                        _onPressUp(p, geometry, dragged: dragged),
+                    onPressCancel: _onPressCancel,
+                    onHoverSquare: (s) => _hover.value = s,
+                  ),
                 ),
               ),
             ),
             Positioned.fill(
-              child: ValueListenableBuilder<_PendingPromotion?>(
-                valueListenable: _promotion,
-                builder: (context, pending, _) {
-                  if (pending == null) return const SizedBox.shrink();
-                  final request = _requestFor(pending, geometry);
-                  final custom = widget.promotionPickerBuilder;
-                  final Widget picker = custom == null
-                      ? PromotionPicker(
-                          request: request,
-                          geometry: geometry,
-                          pieceSet: _shownSet ?? widget.pieceSet,
-                          theme: theme,
-                        )
-                      : Stack(
-                          children: [
-                            // Taps outside a custom picker cancel too.
-                            Positioned.fill(
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onTap: request.cancel,
-                              ),
-                            ),
-                            Positioned.fill(child: custom(context, request)),
-                          ],
-                        );
-                  return _PromotionScope(
-                    onCancel: request.cancel,
-                    child: picker,
-                  );
-                },
+              // The picker sits on a square too, so it fades and waits out a
+              // flip like the other overlays.
+              child: _IgnoreWhileFlipping(
+                flip: _flip,
+                child: _whileNotFlipping(
+                  ValueListenableBuilder<_PendingPromotion?>(
+                    valueListenable: _promotion,
+                    builder: (context, pending, _) {
+                      if (pending == null) return const SizedBox.shrink();
+                      final request = _requestFor(pending, geometry);
+                      final custom = widget.promotionPickerBuilder;
+                      final Widget picker = custom == null
+                          ? PromotionPicker(
+                              request: request,
+                              geometry: geometry,
+                              pieceSet: _shownSet ?? widget.pieceSet,
+                              theme: theme,
+                            )
+                          : Stack(
+                              children: [
+                                // Taps outside a custom picker cancel too.
+                                Positioned.fill(
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: request.cancel,
+                                  ),
+                                ),
+                                Positioned.fill(
+                                  child: custom(context, request),
+                                ),
+                              ],
+                            );
+                      return _PromotionScope(
+                        onCancel: request.cancel,
+                        child: picker,
+                      );
+                    },
+                  ),
+                ),
               ),
             ),
           ],
@@ -897,4 +1015,20 @@ class _PromotionScopeState extends State<_PromotionScope> {
 /// A listenable that notifies on demand.
 class _ChangeSignal extends ChangeNotifier {
   void notify() => notifyListeners();
+}
+
+/// Ignores pointer input while [flip] runs.
+class _IgnoreWhileFlipping extends AnimatedWidget {
+  const _IgnoreWhileFlipping({
+    required Animation<double> flip,
+    required this.child,
+  }) : super(listenable: flip);
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final flip = listenable as Animation<double>;
+    return IgnorePointer(ignoring: flip.status.isAnimating, child: child);
+  }
 }

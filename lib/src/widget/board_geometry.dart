@@ -155,16 +155,28 @@ class BoardGeometry {
   /// it, at [t] = 1 where this orientation puts it, and in between it moves
   /// along an arc, keeping its distance from the center. Pieces never pile
   /// up in the middle.
-  Offset flipOrigin(Square square, double t) {
+  ///
+  /// [clockwise] picks which way the board turns. Reversing a flip part way
+  /// through must turn the other way, so pieces retrace their arc instead
+  /// of jumping to the mirror point on it.
+  Offset flipOrigin(Square square, double t, {bool clockwise = true}) {
+    final half = squareSize / 2;
+    return flipPoint(squareCenter(square), t, clockwise: clockwise) -
+        Offset(half, half);
+  }
+
+  /// Where [point], in this orientation's layout, is drawn part way through
+  /// a flip into this orientation. See [flipOrigin]; this works for any
+  /// point, such as a piece part way through a move.
+  Offset flipPoint(Offset point, double t, {bool clockwise = true}) {
+    if (t >= 1) return point;
     final center = boardCenter;
-    final v = squareCenter(square) - center;
-    // Turn from the opposite side (angle pi) to here (angle 0).
-    final angle = math.pi * (1 - t);
+    final v = point - center;
+    // Turn from the opposite side (angle +-pi) to here (angle 0).
+    final angle = (clockwise ? 1 : -1) * math.pi * (1 - t);
     final c = math.cos(angle);
     final s = math.sin(angle);
-    final rotated = Offset(v.dx * c - v.dy * s, v.dx * s + v.dy * c);
-    final half = squareSize / 2;
-    return center + rotated - Offset(half, half);
+    return center + Offset(v.dx * c - v.dy * s, v.dx * s + v.dy * c);
   }
 
   /// Returns a copy with the given fields replaced.

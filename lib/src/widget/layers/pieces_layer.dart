@@ -24,6 +24,8 @@ class PiecesLayer extends StatelessWidget {
     required this.hiddenSquares,
     required this.geometry,
     required this.pieceSet,
+    this.flip,
+    this.flipClockwise = true,
   });
 
   /// The game to show.
@@ -43,12 +45,27 @@ class PiecesLayer extends StatelessWidget {
   /// The artwork, or null while it is loading.
   final PieceSet? pieceSet;
 
+  /// Progress of a board flip into [geometry]'s orientation, from 0 to 1,
+  /// or null when not flipping. While it runs, pieces turn around the
+  /// board's center to their new squares.
+  final Animation<double>? flip;
+
+  /// Which way the board turns during [flip].
+  final bool flipClockwise;
+
+  Rect _rectFor(Square square) {
+    final t = flip?.value ?? 1;
+    if (t >= 1) return geometry.squareRect(square);
+    return geometry.flipOrigin(square, t, clockwise: flipClockwise) &
+        Size.square(geometry.squareSize);
+  }
+
   @override
   Widget build(BuildContext context) {
     final set = pieceSet;
     if (set == null) return const SizedBox.expand();
     return ListenableBuilder(
-      listenable: Listenable.merge([positionChanges, hiddenSquares]),
+      listenable: Listenable.merge([positionChanges, hiddenSquares, ?flip]),
       builder: (context, _) => Stack(
         clipBehavior: Clip.none,
         children: [
@@ -57,7 +74,7 @@ class PiecesLayer extends StatelessWidget {
             if (!hiddenSquares.value.contains(square))
               Positioned.fromRect(
                 key: ValueKey(square),
-                rect: geometry.squareRect(square),
+                rect: _rectFor(square),
                 child: RepaintBoundary(
                   child: ChessPieceView(
                     piece: piece,

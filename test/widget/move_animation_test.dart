@@ -365,17 +365,19 @@ void main() {
       expect(c.pieceAt(Square.c4), Piece.whiteBishop);
     });
 
-    testWidgets('history navigation snaps', (tester) async {
+    testWidgets('one history step animates; longer jumps snap', (tester) async {
       final c = ChessBoardController()
         ..moveSan('e4')
-        ..moveSan('e5');
+        ..moveSan('e5')
+        ..moveSan('Nf3');
       await pumpBoard(tester, ChessBoard(controller: c));
       c.back();
       await tester.pump();
-      expect(inFlight(tester), isEmpty);
+      expect(inFlight(tester), isNotEmpty, reason: 'one step back');
+      await tester.pumpAndSettle();
       c.goTo(0);
       await tester.pump();
-      expect(inFlight(tester), isEmpty);
+      expect(inFlight(tester), isEmpty, reason: 'a jump of two moves');
     });
 
     testWidgets('a branch move animates', (tester) async {

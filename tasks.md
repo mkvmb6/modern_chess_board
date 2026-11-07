@@ -123,7 +123,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Tests: frame by frame at 0/50/100% the moving piece appears exactly once; a drag move has no in-flight piece; a second move mid-flight ends at the right final FEN; zero duration and reduced motion settle in one pump; a controller swap ends a running animation.
   - _Req 4. Design 5.7_
 
-- [ ] 20. Flip animation and history-navigation animation
+- [x] 20. Flip animation and history-navigation animation
   - Animated orientation change; navigation diffs animate single moves and snap other changes.
   - Tests: midway through a flip, positions are interpolated and the final state matches the black orientation; `back()` animates the reverse of the last move; a controller swap ends a flip or history animation.
   - _Req 1, 6. Design 5.2, 5.7_

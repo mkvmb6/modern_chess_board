@@ -70,7 +70,11 @@ class PieceFade {
 @immutable
 class MovePlan {
   /// Creates a plan.
-  const MovePlan({required this.moving, required this.fading});
+  const MovePlan({
+    required this.moving,
+    required this.fading,
+    this.appearing = const [],
+  });
 
   /// The plan for [move], an applied move with flags filled in, given the
   /// pieces on the board just [before] it.
@@ -113,26 +117,74 @@ class MovePlan {
     );
   }
 
+  /// The plan for taking [move] back, given the pieces [after] it was
+  /// played: the mover slides home (a promoted piece travels back as the
+  /// pawn), a castling rook slides home too, and a captured piece fades
+  /// back in where it stood.
+  factory MovePlan.forUndo(
+    BoardMove move, {
+    required Map<Square, Piece> after,
+  }) {
+    final landed = after[move.to];
+    if (landed == null) return const MovePlan(moving: [], fading: []);
+    final pawn = Piece(landed.color, PieceType.pawn);
+    final mover = move.promotion == null ? landed : pawn;
+    final moving = <PieceSlide>[];
+    if (move.castle case final CastleSide side) {
+      final rank = move.from.rank;
+      final kingside = side == CastleSide.kingside;
+      final rookHome = Square.at(kingside ? 7 : 0, rank);
+      final rookNow = Square.at(kingside ? 5 : 3, rank);
+      final rook = after[rookNow];
+      if (rook != null) {
+        moving.add(PieceSlide(rook, from: rookNow, to: rookHome));
+      }
+    }
+    moving.add(PieceSlide(mover, from: move.to, to: move.from));
+    final appearing = <PieceFade>[];
+    if (move.captured case final Piece captured) {
+      final square = move.isEnPassant
+          ? Square.at(move.to.file, move.from.rank)
+          : move.to;
+      appearing.add(PieceFade(captured, square));
+    }
+    return MovePlan(
+      moving: List.unmodifiable(moving),
+      fading: const [],
+      appearing: List.unmodifiable(appearing),
+    );
+  }
+
   /// Pieces sliding into place.
   final List<PieceSlide> moving;
+
+  /// Pieces fading back in, such as a capture being taken back.
+  final List<PieceFade> appearing;
 
   /// Captured pieces fading out.
   final List<PieceFade> fading;
 
   /// Squares whose final piece is drawn by the animation, so the pieces
   /// layer leaves them empty until it ends. A piece never shows twice.
-  Set<Square> get animatedSquares => {for (final s in moving) s.to};
+  Set<Square> get animatedSquares => {
+    for (final s in moving) s.to,
+    for (final a in appearing) a.square,
+  };
 
   /// Whether there is nothing to animate.
-  bool get isEmpty => moving.isEmpty && fading.isEmpty;
+  bool get isEmpty => moving.isEmpty && fading.isEmpty && appearing.isEmpty;
 
   @override
   bool operator ==(Object other) =>
       other is MovePlan &&
       listEquals(other.moving, moving) &&
-      listEquals(other.fading, fading);
+      listEquals(other.fading, fading) &&
+      listEquals(other.appearing, appearing);
 
   @override
-  int get hashCode =>
-      Object.hash(Object.hashAll(moving), Object.hashAll(fading));
+  int get hashCode => Object.hash(
+    Object.hashAll(moving),
+    Object.hashAll(fading),
+    Object.hashAll(appearing),
+  );
 }

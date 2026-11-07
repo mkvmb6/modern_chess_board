@@ -21,18 +21,25 @@ class MoveAnimator extends ChangeNotifier {
   final AnimationController _controller;
 
   /// Progress of the running plan, from 0 to 1.
-  late final Animation<double> progress = CurvedAnimation(
+  late final CurvedAnimation progress = CurvedAnimation(
     parent: _controller,
     curve: Curves.easeInOutCubic,
   );
 
+  late final CurvedAnimation _fadeOutCurve = CurvedAnimation(
+    parent: _controller,
+    curve: const Interval(0, 0.6, curve: Curves.easeOut),
+  );
+
   /// Opacity of captured pieces: gone in the first 60% of the move, so
   /// they don't overlap the arriving piece half-transparently.
-  late final Animation<double> fadeOut = ReverseAnimation(
-    CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0, 0.6, curve: Curves.easeOut),
-    ),
+  late final Animation<double> fadeOut = ReverseAnimation(_fadeOutCurve);
+
+  /// Opacity of pieces coming back, such as a capture taken back: they
+  /// appear in the last 60%, once the piece that took them has moved off.
+  late final CurvedAnimation fadeIn = CurvedAnimation(
+    parent: _controller,
+    curve: const Interval(0.4, 1, curve: Curves.easeIn),
   );
 
   /// The running plan, or null.
@@ -72,6 +79,9 @@ class MoveAnimator extends ChangeNotifier {
 
   @override
   void dispose() {
+    progress.dispose();
+    _fadeOutCurve.dispose();
+    fadeIn.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -86,7 +96,16 @@ class MoveAnimationLayer extends StatelessWidget {
     required this.animator,
     required this.geometry,
     required this.pieceSet,
+    this.flip,
+    this.flipClockwise = true,
   });
+
+  /// Progress of a board flip, so a move made mid-flip turns with the
+  /// other pieces. Null or 1 when not flipping.
+  final Animation<double>? flip;
+
+  /// Which way the board turns during [flip].
+  final bool flipClockwise;
 
   /// The animator to follow.
   final MoveAnimator animator;
@@ -101,20 +120,27 @@ class MoveAnimationLayer extends StatelessWidget {
   Widget build(BuildContext context) => IgnorePointer(
     child: RepaintBoundary(
       child: ListenableBuilder(
-        listenable: Listenable.merge([animator, animator.progress]),
+        listenable: Listenable.merge([animator, animator.progress, ?flip]),
         builder: (context, _) {
           final plan = animator.plan;
           final set = pieceSet;
           if (plan == null || set == null) return const SizedBox.expand();
           final t = animator.progress.value;
           final size = geometry.squareSize;
+          final turn = flip?.value ?? 1;
+          // A square, or a point between squares, as drawn mid-flip.
+          Rect at(Offset center) => Rect.fromCenter(
+            center: geometry.flipPoint(center, turn, clockwise: flipClockwise),
+            width: size,
+            height: size,
+          );
           return Stack(
             clipBehavior: Clip.none,
             children: [
               // Captured pieces fade under the arriving piece.
               for (final fade in plan.fading)
                 Positioned.fromRect(
-                  rect: geometry.squareRect(fade.square),
+                  rect: at(geometry.squareCenter(fade.square)),
                   child: FadeTransition(
                     opacity: animator.fadeOut,
                     child: ChessPieceView(
@@ -125,15 +151,29 @@ class MoveAnimationLayer extends StatelessWidget {
                     ),
                   ),
                 ),
+              // Pieces coming back, such as a capture being taken back.
+              for (final appear in plan.appearing)
+                Positioned.fromRect(
+                  rect: at(geometry.squareCenter(appear.square)),
+                  child: FadeTransition(
+                    opacity: animator.fadeIn,
+                    child: ChessPieceView(
+                      piece: appear.piece,
+                      size: size,
+                      pieceSet: set,
+                      excludeFromSemantics: true,
+                    ),
+                  ),
+                ),
               for (final slide in plan.moving)
                 Positioned.fromRect(
-                  rect:
-                      Offset.lerp(
-                        geometry.squareOrigin(slide.from),
-                        geometry.squareOrigin(slide.to),
-                        t,
-                      )! &
-                      Size.square(size),
+                  rect: at(
+                    Offset.lerp(
+                      geometry.squareCenter(slide.from),
+                      geometry.squareCenter(slide.to),
+                      t,
+                    )!,
+                  ),
                   child: ChessPieceView(
                     piece: slide.piece,
                     size: size,
