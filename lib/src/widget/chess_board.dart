@@ -44,9 +44,14 @@ class ChessBoard extends StatefulWidget {
 
   /// A position to load into [controller] when the board first appears.
   ///
-  /// Applied once; changing it later has no effect, so use the controller
-  /// to change the position afterwards. Throws an [ArgumentError] when the
-  /// board first builds if the FEN is not a valid position.
+  /// Applied only to a controller that hasn't been used yet: when the board
+  /// first appears, and when the app swaps in a fresh controller, for
+  /// example to start a new game. A controller with moves played or a
+  /// position loaded is never reset. Changing [initialFen] alone has no
+  /// effect; use the controller to change the position. Throws an
+  /// [ArgumentError] if the FEN is not a valid position.
+  ///
+  /// `ChessBoardController(fen: ...)` is usually simpler.
   final String? initialFen;
 
   /// Every color the board paints. Defaults to the green preset.
@@ -130,11 +135,23 @@ class _ChessBoardState extends State<ChessBoard> {
   @override
   void didUpdateWidget(ChessBoard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.controller != oldWidget.controller) {
+      // A fresh controller for a new game gets the initial position too;
+      // a controller already in use is left as it is.
+      _applyInitialFen();
+      _resetEphemeralState();
+    }
     if (widget.pieceSet != oldWidget.pieceSet &&
         widget.pieceSet != _loadingSet) {
       _load(widget.pieceSet);
     }
   }
+
+  /// Clears everything the board holds about the current interaction:
+  /// selection, drag, pending promotion, premove, hint, user drawings and
+  /// running animations. Called when the controller is swapped. Later
+  /// features add their state here rather than resetting it elsewhere.
+  void _resetEphemeralState() {}
 
   void _load(PieceSet set) {
     _loadingSet = set;

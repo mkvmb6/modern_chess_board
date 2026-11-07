@@ -73,7 +73,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
 
 - [x] 11. Controller listening and swap
   - Listen to the controller and rebuild on change. On swap, unhook the old controller and reset all ephemeral state.
-  - Tests: `controller.move()` updates the board with no app wiring; swapping controllers shows the new game and clears selection, hint and animation.
+  - Tests: `controller.move()` updates the board with no app wiring; swapping controllers shows the new game and listens only to it; a fresh swapped-in controller gets `initialFen`. Clearing selection, drag, promotion, animation, hint, drawings and premoves on a swap is tested in the tasks that add that state (12, 13, 14, 19, 20, 21, 22, 23), all through one `_resetEphemeralState()`.
   - _Req 6. Design 5.9_
 
 ## Phase 4: Interaction
@@ -85,7 +85,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
 
 - [ ] 13. Drag and drop
   - Drag threshold, floating piece (scale cap, touch lift), empty source square, drop legal/illegal/off board/cancel, grab and grabbing cursors.
-  - Tests: a movement below the threshold counts as a tap; an illegal drop snaps back with the position unchanged; dragging replaces the tap selection; the source square is empty during the drag; scale ≤ 1.15 and overflow ≤ 4 px at 120 px board; cursor values from `MouseRegion`.
+  - Tests: a movement below the threshold counts as a tap; an illegal drop snaps back with the position unchanged; dragging replaces the tap selection; the source square is empty during the drag; scale ≤ 1.15 and overflow ≤ 4 px at 120 px board; cursor values from `MouseRegion`; a controller swap cancels an in-progress drag.
   - _Req 2, 3. Design 5.4_
 
 - [ ] 14. Promotion
@@ -124,7 +124,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
 
 - [ ] 20. Flip animation and history-navigation animation
   - Animated orientation change; navigation diffs animate single moves and snap other changes.
-  - Tests: midway through a flip, positions are interpolated and the final state matches the black orientation; `back()` animates the reverse of the last move.
+  - Tests: midway through a flip, positions are interpolated and the final state matches the black orientation; `back()` animates the reverse of the last move; a controller swap ends a flip or history animation.
   - _Req 1, 6. Design 5.2, 5.7_
 
 ## Phase 7: Arrows and annotations
