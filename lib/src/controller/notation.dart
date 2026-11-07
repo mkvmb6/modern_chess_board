@@ -66,3 +66,11 @@ String _drawText(DrawReason reason) => switch (reason) {
 };
 
 String _capitalize(String s) => s[0].toUpperCase() + s.substring(1);
+
+/// Words a move for screen readers. [drawReason] is set when the move ended
+/// the game in a draw. See [defaultMoveAnnouncer].
+typedef MoveAnnouncer = String Function(BoardMove move, DrawReason? drawReason);
+
+/// The board's default [MoveAnnouncer]: [describeMove], in English.
+String defaultMoveAnnouncer(BoardMove move, DrawReason? drawReason) =>
+    describeMove(move, drawReason: drawReason);

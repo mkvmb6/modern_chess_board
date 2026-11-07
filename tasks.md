@@ -160,7 +160,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Tests: a recording sound pack checks the event sequence across a scripted game; a throwing pack doesn't break play; haptics calls captured through the `SystemChannels.platform` mock.
   - _Req 10. Design 9_
 
-- [ ] 26. Semantics
+- [x] 26. Semantics
   - Semantics grid with labels, selected state, legal hint, activate-to-move, announcements, text scaling. Activation goes through `BoardInteraction.tap`, the same rules as pointer presses; the full-board gesture `Listener` does not handle screen-reader taps.
   - Tests: `find.bySemanticsLabel('e4, white pawn')` after 1.e4; `tester.semantics.tap` plays a move; announcement captured through the `SystemChannels.accessibility` mock; text scale 2.0 keeps labels inside their squares.
   - _Req 11. Design 10_

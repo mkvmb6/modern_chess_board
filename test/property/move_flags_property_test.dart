@@ -1,7 +1,6 @@
 import 'package:glados/glados.dart';
 import 'package:modern_chess_board/modern_chess_board.dart';
 import 'package:modern_chess_board/src/controller/move_classifier.dart';
-import 'package:modern_chess_board/src/controller/notation.dart';
 
 /// Starting positions that make rare move types likely in short random
 /// games: promotions, castling (sometimes with check), en passant, and

@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../controller/board_change.dart';
 import '../controller/chess_board_controller.dart';
 import '../controller/move_classifier.dart';
+import '../controller/notation.dart';
 import '../haptics/haptics.dart';
 import '../model/annotations.dart';
 import '../model/board_move.dart';
@@ -34,6 +36,7 @@ import 'layers/highlight_layer.dart';
 import 'layers/highlight_model.dart';
 import 'layers/labels_layer.dart';
 import 'layers/pieces_layer.dart';
+import 'layers/semantics_layer.dart';
 import 'layers/squares_layer.dart';
 import 'promotion/promotion_picker.dart';
 
@@ -68,6 +71,8 @@ class ChessBoard extends StatefulWidget {
     this.enableKeyboard = true,
     this.soundPack = const SilentSoundPack(),
     this.enableHaptics = false,
+    this.moveAnnouncer = defaultMoveAnnouncer,
+    this.semanticsLabel = 'Chess board',
     this.autoQueen = false,
     this.promotionPickerBuilder,
     this.onMove,
@@ -176,6 +181,16 @@ class ChessBoard extends StatefulWidget {
   /// a click when a piece is picked up to drag, and a tap when it is
   /// dropped on a square it can go to. Off by default.
   final bool enableHaptics;
+
+  /// Words the move a screen reader announces after each move, for
+  /// example "White knight to f3, check". Defaults to [defaultMoveAnnouncer], in
+  /// English; pass your own to localize. Moves are announced however they
+  /// were made; history navigation and silent changes aren't.
+  final MoveAnnouncer moveAnnouncer;
+
+  /// What screen readers call the board as a whole; each square has its
+  /// own label inside it.
+  final String semanticsLabel;
 
   /// When true, pawns reaching the last rank become queens without asking.
   final bool autoQueen;
@@ -376,6 +391,56 @@ class _ChessBoardState extends State<ChessBoard>
       ? const BoardHaptics(enabled: true)
       : const BoardHaptics(enabled: false);
 
+  /// Tells screen readers about the move just seen.
+  void _announceMove() {
+    final c = widget.controller;
+    final change = c.lastChange;
+    if (change is! MoveApplied || change.silent) return;
+    final text = widget.moveAnnouncer(change.move, c.drawReason);
+    if (text.isEmpty) return;
+    SemanticsService.sendAnnouncement(
+      View.of(context),
+      text,
+      Directionality.of(context),
+    );
+  }
+
+  /// What a screen reader is told about [square].
+  SquareSemantics _describeSquare(Square square) {
+    final selected = _interaction.selection.value;
+    final target =
+        selected != null && _interaction.resolveAny(selected, square) != null;
+    final piece = selected == null ? null : widget.controller.pieceAt(selected);
+    final queued = _premove.value;
+    return SquareSemantics(
+      label: squareLabel(widget.controller, square),
+      selected: selected == square,
+      hint: target
+          ? (piece != null && _interaction.canMove(piece.color)
+                ? 'legal move'
+                : 'premove')
+          : (queued != null && (queued.from == square || queued.to == square))
+          ? 'premove queued'
+          : null,
+    );
+  }
+
+  /// A screen reader activated [square]: a whole tap, with the same rules
+  /// as a pointer press.
+  void _activateSquare(Square square) {
+    if (_promotion.value != null) return;
+    _onPressDown(square, PointerDeviceKind.unknown, fromKeyboard: true);
+    _pressOrigin = null;
+    _interaction.pressUp(dragged: false);
+  }
+
+  /// What the semantics grid rebuilds for.
+  late final Listenable _semanticsChanges = Listenable.merge([
+    _positionChanges,
+    _interaction.selection,
+    _premove,
+  ]);
+
   /// Plays the sound for the change just seen, if it is a move that
   /// notified listeners. Called once per notification, so one move makes
   /// one sound.
@@ -416,12 +481,7 @@ class _ChessBoardState extends State<ChessBoard>
 
   /// Enter or Space on [square]: a whole tap, through the same rules as a
   /// pointer press.
-  void _keyTap(Square square) {
-    if (_promotion.value != null) return;
-    _onPressDown(square, PointerDeviceKind.unknown, fromKeyboard: true);
-    _pressOrigin = null;
-    _interaction.pressUp(dragged: false);
-  }
+  void _keyTap(Square square) => _activateSquare(square);
 
   /// Plays a typed move if one legal move matches it and the user may move
   /// that piece. Returns whether it was played.
@@ -954,6 +1014,7 @@ class _ChessBoardState extends State<ChessBoard>
       // app listener replies to a move before the board hears of it, the
       // reply's sound is the one heard.
       _playMoveSound();
+      _announceMove();
       _reportChange();
       if (!mounted || widget.controller.changeId != id) return;
       // The opponent's move arrived: play the queued premove. Any other
@@ -1235,6 +1296,23 @@ class _ChessBoardState extends State<ChessBoard>
     // Without a Material ancestor, the ambient style is Flutter's red
     // "missing Material" debug style; never let that tint the labels.
     final ambient = _isFallbackStyle(ambientStyle) ? null : ambientStyle.color;
+    return Semantics(
+      // Names the board's own node (the keyboard focus target), so moving
+      // through it doesn't read an unnamed element.
+      label: widget.semanticsLabel,
+      container: true,
+      explicitChildNodes: true,
+      child: _focusable(context, theme, dpr, ambientStyle, ambient),
+    );
+  }
+
+  Widget _focusable(
+    BuildContext context,
+    ChessBoardTheme theme,
+    double dpr,
+    TextStyle ambientStyle,
+    Color? ambient,
+  ) {
     return Focus(
       focusNode: _focusNode,
       canRequestFocus: widget.enableKeyboard,
@@ -1270,6 +1348,24 @@ class _ChessBoardState extends State<ChessBoard>
         );
         return Stack(
           children: [
+            // Screen readers explore the board through this grid, one node
+            // per square. It paints nothing and takes no pointer input; the
+            // visual layers above are excluded from semantics.
+            Positioned.fill(
+              // While the promotion picker is open it is the only thing a
+              // screen reader can reach, as for a dialog.
+              child: ValueListenableBuilder<_PendingPromotion?>(
+                valueListenable: _promotion,
+                builder: (context, pending, child) =>
+                    ExcludeSemantics(excluding: pending != null, child: child),
+                child: BoardSemanticsLayer(
+                  geometry: geometry,
+                  describe: _describeSquare,
+                  listenable: _semanticsChanges,
+                  onActivate: widget.readOnly ? null : _activateSquare,
+                ),
+              ),
+            ),
             Positioned.fill(
               child: RepaintBoundary(
                 child: CustomPaint(

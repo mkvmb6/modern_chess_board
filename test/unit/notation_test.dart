@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:modern_chess_board/modern_chess_board.dart';
-import 'package:modern_chess_board/src/controller/notation.dart';
 
 /// Loads [fen], plays [san], and returns the spoken description.
 String spoken(String fen, String san) {
