@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../controller/chess_board_controller.dart';
+import '../../model/board_move.dart';
 import '../../model/piece.dart';
 import '../../model/square.dart';
 
@@ -113,6 +114,31 @@ class BoardInteraction {
     return piece != null && canMove(piece.color);
   }
 
+  /// The legal destination meant by the user moving the piece on [from] to
+  /// [to], or null if there is none.
+  ///
+  /// Usually that is [to] itself. Moving the king onto one of its own rooks
+  /// means castling on that side, as on chess sites and in Chess960, so it
+  /// maps to the king's castling destination when castling there is legal.
+  Square? resolveTarget(Square from, Square to) {
+    final moves = controller.legalMovesFrom(from);
+    if (moves.any((m) => m.to == to)) return to;
+    final mover = controller.pieceAt(from);
+    final onto = controller.pieceAt(to);
+    if (mover?.type != PieceType.king ||
+        onto != Piece(mover!.color, PieceType.rook) ||
+        to.rank != from.rank) {
+      return null;
+    }
+    final side = to.file > from.file
+        ? CastleSide.kingside
+        : CastleSide.queenside;
+    for (final m in moves) {
+      if (m.castle == side) return m.to;
+    }
+    return null;
+  }
+
   /// Applies the rules for a press starting on [square].
   TapOutcome pressDown(Square square) {
     _pressedSelected = false;
@@ -126,14 +152,12 @@ class BoardInteraction {
       _pressedSelected = true;
       return TapOutcome.pressedSelected;
     }
-    // A legal destination wins over switching, so captures and (later)
-    // castling by moving the king onto its rook work.
-    final legal = controller
-        .legalMovesFrom(selected)
-        .any((m) => m.to == square);
-    if (legal) {
+    // A legal destination wins over switching, so captures and castling by
+    // moving the king onto its own rook work.
+    final target = resolveTarget(selected, square);
+    if (target != null) {
       selection.value = null;
-      return onMove(selected, square) ? TapOutcome.moved : TapOutcome.illegal;
+      return onMove(selected, target) ? TapOutcome.moved : TapOutcome.illegal;
     }
     if (_canSelect(square)) {
       selection.value = square;
@@ -164,9 +188,9 @@ class BoardInteraction {
     clear();
     final piece = controller.pieceAt(from);
     if (piece == null || !canMove(piece.color)) return TapOutcome.ignored;
-    final legal = controller.legalMovesFrom(from).any((m) => m.to == to);
-    if (!legal) return TapOutcome.illegal;
-    return onMove(from, to) ? TapOutcome.moved : TapOutcome.illegal;
+    final target = resolveTarget(from, to);
+    if (target == null) return TapOutcome.illegal;
+    return onMove(from, target) ? TapOutcome.moved : TapOutcome.illegal;
   }
 
   /// A whole tap: a press that ends without dragging. Used by tests and by

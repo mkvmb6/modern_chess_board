@@ -207,7 +207,7 @@ A user can move when all of these hold:
 - With `autoQueen`, the overlay is skipped.
 - `promotionPickerBuilder(context, color, onSelect, onCancel)` replaces the default overlay.
 
-**Castling:** a king move of two files, or onto a friendly rook, is mapped to the engine's castling move when one is legal.
+**Castling:** a king move of two files, or onto a friendly rook, is mapped to the engine's castling move when one is legal. `BoardInteraction.resolveTarget` does the mapping for taps, drops and (later) keyboard and premove input. When the king is selected, a legal castle wins over switching the selection to the rook. Chess960 follow-up: return the `BoardMove` rather than a square, because there the castling square can be an ordinary king move or the king's own square.
 
 ### 5.5 Premoves
 

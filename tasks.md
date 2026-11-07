@@ -93,7 +93,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Tests: the picker appears by tap and by drag; each of the 4 choices applies; each cancel path leaves the FEN unchanged; auto-queen skips the picker; the custom builder is used; a controller swap closes a pending picker.
   - _Req 2. Design 5.4_
 
-- [ ] 15. Castling input
+- [x] 15. Castling input
   - King two squares, and king onto its own rook.
   - Tests: both inputs castle on both sides for both colors; the rook ends up on the right square.
   - _Req 2. Design 5.4_
@@ -106,12 +106,12 @@ Each task is written test-first: write the failing tests, implement, then run `f
 ## Phase 5: Visual feedback
 
 - [ ] 17. Highlight layer
-  - Selection, legal dots and rings (en passant as a ring), last move with the no-double-tint rule, `showLastMove`, checkmate tint, optional check tint, hover on desktop.
+  - Selection, legal dots and rings (en passant as a ring), last move with the no-double-tint rule, `showLastMove`, checkmate tint, optional check tint, hover on desktop. While the king is selected, also ring its own rook when castling on that side is legal, so the king-onto-rook tap is visible beforehand.
   - Tests: painted colors per square checked through a test hook on the painter's input model; selection over the last move uses only the selection color; check tint is off by default and on when a color is given.
   - _Req 3. Design 5.3_
 
 - [ ] 18. Drag feedback layer
-  - Legal/illegal tint under the pointer, none on the source square, cleared on end or cancel, hidden when read-only.
+  - Legal/illegal tint under the pointer, none on the source square, cleared on end or cancel, hidden when read-only. Judge legality with `BoardInteraction.resolveTarget`, so dragging the king over its own rook shows the castling square as legal.
   - Tests: each of those four rules.
   - _Req 3_
 
@@ -142,12 +142,12 @@ Each task is written test-first: write the failing tests, implement, then run `f
 ## Phase 8: Advanced input
 
 - [ ] 23. Premoves
-  - Queue by tap or drag on the opponent's turn, premove highlight, cancel, auto-play on the opponent's move, silent discard if illegal. Split `BoardInteraction.canMove` into a selectable check (no turn check when premoves are on) and a can-move-now check, with premove destinations as a second source of targets.
+  - Queue by tap or drag on the opponent's turn, premove highlight, cancel, auto-play on the opponent's move, silent discard if illegal. Split `BoardInteraction.canMove` into a selectable check (no turn check when premoves are on) and a can-move-now check, with premove destinations as a second source of targets. Premove destinations also resolve king-onto-rook to castling.
   - Tests: queue, cancel, play when legal, discard when illegal, unavailable when `interactiveSide` is both or premoves are off; a controller swap drops a queued premove.
   - _Req 12. Design 5.5_
 
 - [ ] 24. Keyboard play
-  - Focus, focus cursor (orientation-aware), Enter/Space, Escape, navigation mode with left/right, SAN entry.
+  - Focus, focus cursor (orientation-aware), Enter/Space, Escape, navigation mode with left/right, SAN entry. Enter/Space go through `BoardInteraction.tap`, so they use the same rules and `resolveTarget` as pointer input.
   - Tests: `sendKeyEvent` sequences that play e2e4; Escape clears; left arrow in navigation mode calls `back()`; typing `Nf3` plus Enter moves.
   - _Req 11. Design 5.10_
 

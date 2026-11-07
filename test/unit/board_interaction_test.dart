@@ -161,6 +161,69 @@ void main() {
     });
   });
 
+  group('resolveTarget', () {
+    test('a legal destination maps to itself', () {
+      final (i, _) = setup();
+      expect(i.resolveTarget(Square.g1, Square.f3), Square.f3);
+      expect(i.resolveTarget(Square.g1, Square.g3), isNull);
+    });
+
+    test('king onto own rook maps to the castling square', () {
+      final c = ChessBoardController(
+        fen: 'r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1',
+      );
+      final (i, _) = setup(c);
+      expect(i.resolveTarget(Square.e1, Square.h1), Square.g1);
+      expect(i.resolveTarget(Square.e1, Square.a1), Square.c1);
+    });
+
+    test('only a king onto its own rook, on the same rank, castles', () {
+      final c = ChessBoardController(
+        fen: 'r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1',
+      );
+      final (i, _) = setup(c);
+      // A rook onto its king is not castling.
+      expect(i.resolveTarget(Square.h1, Square.e1), isNull);
+      // The opponent's rook is a capture target, not castling.
+      expect(i.resolveTarget(Square.e1, Square.h8), isNull);
+    });
+
+    test('no castling rights, no castling', () {
+      final c = ChessBoardController(fen: 'r3k2r/8/8/8/8/8/8/R3K2R w kq - 0 1');
+      final (i, _) = setup(c);
+      expect(i.resolveTarget(Square.e1, Square.h1), isNull);
+    });
+
+    test('a rook on another rank never counts as castling', () {
+      // Without the same-rank guard, king e1 onto the rook on h2 would
+      // pick the kingside castle.
+      final c = ChessBoardController(
+        fen: '4k3/8/8/8/8/8/7R/R3K2R w KQ - 0 1',
+      );
+      final (i, _) = setup(c);
+      expect(i.resolveTarget(Square.e1, Square.h2), isNull);
+    });
+
+    test('dropping the king on its rook when castling is illegal is '
+        'rejected', () {
+      final c = ChessBoardController(
+        fen: 'r3k2r/8/8/8/8/8/8/R3K2R w kq - 0 1',
+      );
+      final (i, requests) = setup(c);
+      expect(i.drop(Square.e1, Square.h1), TapOutcome.illegal);
+      expect(requests, isEmpty);
+    });
+
+    test('a drop of the king on its rook castles', () {
+      final c = ChessBoardController(
+        fen: 'r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1',
+      );
+      final (i, requests) = setup(c);
+      expect(i.drop(Square.e1, Square.a1), TapOutcome.moved);
+      expect(requests, [(Square.e1, Square.c1)]);
+    });
+  });
+
   group('who can move', () {
     test('read-only boards accept no selection', () {
       final (i, _) = setup();
