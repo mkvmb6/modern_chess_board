@@ -15,6 +15,7 @@ import 'board_geometry.dart';
 import 'interaction/board_gesture_layer.dart';
 import 'interaction/board_interaction.dart';
 import 'interaction/drag_layer.dart';
+import 'layers/drag_feedback_layer.dart';
 import 'layers/highlight_layer.dart';
 import 'layers/highlight_model.dart';
 import 'layers/labels_layer.dart';
@@ -191,6 +192,10 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
 
   /// The square under a hovering mouse, for the hover tint.
   final ValueNotifier<Square?> _hover = ValueNotifier(null);
+
+  /// The square under a dragged piece and whether it is a legal drop.
+  /// Changes only when the pointer crosses into another square.
+  final ValueNotifier<DropTarget?> _dropTarget = ValueNotifier(null);
 
   /// A highlight painter that repaints only when the position, selection or
   /// hover changes, and only if what it would paint actually differs.
@@ -425,11 +430,28 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
       kind: kind,
     );
     _draggedFrom.value = from;
+    _updateDropTarget(from, position, geometry);
   }
 
-  void _onDragUpdate(Offset position) {
+  void _onDragUpdate(Offset position, BoardGeometry geometry) {
     final drag = _drag.value;
-    if (drag != null) _drag.value = drag.moveTo(position);
+    if (drag == null) return;
+    _drag.value = drag.moveTo(position);
+    _updateDropTarget(drag.from, position, geometry);
+  }
+
+  /// Shows whether the square under the pointer is a legal drop. Uses the
+  /// same rules as a drop, so dragging the king over its own rook shows
+  /// castling as legal. The source square and off-board points show
+  /// nothing.
+  void _updateDropTarget(Square from, Offset position, BoardGeometry g) {
+    final square = g.squareAt(position);
+    _dropTarget.value = square == null || square == from
+        ? null
+        : DropTarget(
+            square,
+            legal: _interaction.resolveTarget(from, square) != null,
+          );
   }
 
   void _onPressUp(
@@ -463,6 +485,7 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
   void _endDrag() {
     _drag.value = null;
     _draggedFrom.value = null;
+    _dropTarget.value = null;
   }
 
   void _cancelDrag() {
@@ -483,6 +506,7 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
     _promotion.dispose();
     _hiddenSquare.dispose();
     _hover.dispose();
+    _dropTarget.dispose();
     super.dispose();
   }
 
@@ -560,6 +584,15 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
                 (h) => BoardTintsPainter(geometry: geometry, highlights: h),
               ),
             ),
+            Positioned.fill(
+              // Under the pieces, like the other square tints, so a piece on
+              // the target square (a capture) is framed, not washed out.
+              child: DragFeedbackLayer(
+                target: _dropTarget,
+                geometry: geometry,
+                theme: theme,
+              ),
+            ),
             if (labels.isNotEmpty)
               Positioned.fill(
                 child: RepaintBoundary(
@@ -624,7 +657,7 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
                   refresh: _positionChanges,
                   onPressDown: _onPressDown,
                   onDragStart: (p) => _onDragStart(p, geometry),
-                  onDragUpdate: _onDragUpdate,
+                  onDragUpdate: (p) => _onDragUpdate(p, geometry),
                   onPressUp: (p, {required dragged}) =>
                       _onPressUp(p, geometry, dragged: dragged),
                   onPressCancel: _onPressCancel,

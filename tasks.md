@@ -111,7 +111,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Tests: painted colors per square checked through a test hook on the painter's input model; selection over the last move uses only the selection color; check tint is off by default and on when a color is given.
   - _Req 3. Design 5.3_
 
-- [ ] 18. Drag feedback layer
+- [x] 18. Drag feedback layer
   - Legal/illegal tint under the pointer, none on the source square, cleared on end or cancel, hidden when read-only. Judge legality with `BoardInteraction.resolveTarget`, so dragging the king over its own rook shows the castling square as legal.
   - Tests: each of those four rules.
   - _Req 3_
