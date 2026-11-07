@@ -8,12 +8,16 @@ import 'package:flutter/widgets.dart';
 
 import '../controller/board_change.dart';
 import '../controller/chess_board_controller.dart';
+import '../controller/move_classifier.dart';
+import '../haptics/haptics.dart';
 import '../model/annotations.dart';
 import '../model/board_move.dart';
 import '../model/game_status.dart';
 import '../model/piece.dart';
 import '../model/square.dart';
 import '../pieces/piece_set.dart';
+import '../sound/chess_sound_pack.dart';
+import '../sound/safe_sound_dispatcher.dart';
 import '../theme/chess_board_theme.dart';
 import 'animation/move_animator.dart';
 import 'animation/move_plan.dart';
@@ -62,6 +66,8 @@ class ChessBoard extends StatefulWidget {
     this.interactiveSide = InteractiveSide.both,
     this.enablePremoves = false,
     this.enableKeyboard = true,
+    this.soundPack = const SilentSoundPack(),
+    this.enableHaptics = false,
     this.autoQueen = false,
     this.promotionPickerBuilder,
     this.onMove,
@@ -155,6 +161,21 @@ class ChessBoard extends StatefulWidget {
   /// users never see it. On by default; any hardware keyboard works,
   /// including one attached to a phone or tablet.
   final bool enableKeyboard;
+
+  /// Plays sounds for moves. The board sends one [SoundEvent] per move,
+  /// whoever made it (the user, a premove, or the app through the
+  /// controller), and [SoundEvent.illegal] when the user drops a piece on a
+  /// square it can't go to or enters a typed move that can't be played.
+  /// Tapping away to clear a selection, or dropping a piece back where it
+  /// started or off the board, is a cancel, not an attempt, and is silent. Nothing is sent for undo, reset, loading, history
+  /// navigation or changes made with `notify: false`. Errors from the pack
+  /// are reported and never break the board. Silent by default.
+  final ChessSoundPack soundPack;
+
+  /// Whether the board gives light haptic feedback on phones and tablets:
+  /// a click when a piece is picked up to drag, and a tap when it is
+  /// dropped on a square it can go to. Off by default.
+  final bool enableHaptics;
 
   /// When true, pawns reaching the last rank become queens without asking.
   final bool autoQueen;
@@ -348,6 +369,26 @@ class _ChessBoardState extends State<ChessBoard>
   /// The queued premove, or null.
   final ValueNotifier<Premove?> _premove = ValueNotifier(null);
 
+  /// Sends sound events without letting the pack's errors escape.
+  late final SafeSoundDispatcher _sound = SafeSoundDispatcher(widget.soundPack);
+
+  BoardHaptics get _haptics => widget.enableHaptics
+      ? const BoardHaptics(enabled: true)
+      : const BoardHaptics(enabled: false);
+
+  /// Plays the sound for the change just seen, if it is a move that
+  /// notified listeners. Called once per notification, so one move makes
+  /// one sound.
+  void _playMoveSound() {
+    final c = widget.controller;
+    final change = c.lastChange;
+    if (change is! MoveApplied || change.silent) return;
+    _sound.dispatch(classifyMove(change.move, c.status));
+  }
+
+  /// The user tried a move that isn't legal.
+  void _playIllegal() => _sound.dispatch(SoundEvent.illegal);
+
   /// Keyboard focus for the board.
   final FocusNode _focusNode = FocusNode(debugLabel: 'chess board');
 
@@ -385,6 +426,12 @@ class _ChessBoardState extends State<ChessBoard>
   /// Plays a typed move if one legal move matches it and the user may move
   /// that piece. Returns whether it was played.
   bool _submitTypedMove(String san) {
+    final played = _playTypedMove(san);
+    if (!played) _playIllegal();
+    return played;
+  }
+
+  bool _playTypedMove(String san) {
     final c = widget.controller;
     if (_promotion.value != null) return false;
     final legal = [
@@ -764,6 +811,7 @@ class _ChessBoardState extends State<ChessBoard>
       // Restart (or stop) the timer for the hint already showing.
       _showHint(_hint.value);
     }
+    _sound.pack = widget.soundPack;
     if (widget.pieceSet != oldWidget.pieceSet &&
         widget.pieceSet != _loadingSet) {
       _load(widget.pieceSet);
@@ -889,8 +937,10 @@ class _ChessBoardState extends State<ChessBoard>
     if (id != _seenChangeId) {
       final previousId = _seenChangeId;
       _seenChangeId = id;
-      final moved =
-          id == previousId + 1 && widget.controller.lastChange is MoveApplied;
+      // The notification ends in a move, even if an app listener replied
+      // to it before the board heard (the id then jumps by two).
+      final lastChange = widget.controller.lastChange;
+      final moved = lastChange is MoveApplied && !lastChange.silent;
       _carryInputOver(_shownPieces, moved: moved);
       _cancelPromotion();
       // The hint was advice for the old position, so any change of
@@ -900,6 +950,10 @@ class _ChessBoardState extends State<ChessBoard>
       if (widget.clearUserAnnotationsOnMove) _clearUserDrawings();
       _planAnimation(previousId);
       _positionChanges.notify();
+      // One sound per notification that ends in a notified move. When an
+      // app listener replies to a move before the board hears of it, the
+      // reply's sound is the one heard.
+      _playMoveSound();
       _reportChange();
       if (!mounted || widget.controller.changeId != id) return;
       // The opponent's move arrived: play the queued premove. Any other
@@ -1033,6 +1087,7 @@ class _ChessBoardState extends State<ChessBoard>
       kind: kind,
     );
     _draggedFrom.value = from;
+    _haptics.pickUp();
     _updateDropTarget(from, position, geometry);
   }
 
@@ -1080,8 +1135,16 @@ class _ChessBoardState extends State<ChessBoard>
     // animate. A drop onto a promotion square waits for the choice, which
     // then lands without animating too.
     _dropping = true;
-    _interaction.drop(drag.from, target);
+    final outcome = _interaction.drop(drag.from, target);
     if (_promotion.value == null) _dropping = false;
+    switch (outcome) {
+      case TapOutcome.moved || TapOutcome.premoved:
+        _haptics.drop();
+      case TapOutcome.illegal:
+        _playIllegal();
+      case _:
+        break;
+    }
   }
 
   void _onPressCancel() {

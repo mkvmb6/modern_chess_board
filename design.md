@@ -335,7 +335,7 @@ class SilentSoundPack extends ChessSoundPack { ... }  // default
 
 - It calls `pack.play` inside `try`. If the call returns a `Future`, it listens for its error. The call runs in the caller's zone, not a private error zone: Dart never passes errors between error zones, so a private zone would hang packs that await a player created earlier. Errors in work a pack starts without returning it go to the app's `PlatformDispatcher.onError`.
 - Errors are reported through `FlutterError.reportError` with the library name `modern_chess_board`, and are never rethrown.
-- Exactly one event is sent per successful move, triggered by `MoveApplied` with `silent == false`. `illegal` is sent for rejected user drops and taps on an illegal destination while a piece is selected.
+- Exactly one event is sent per successful move, triggered by `MoveApplied` with `silent == false`. `illegal` is sent for rejected user drops and rejected typed moves. Tapping away to clear a selection, and dropping a piece back on its square or off the board, are cancels and stay silent. A notification that ends in a notified move sounds once, even when an app listener replied to it before the board heard (the reply is what is heard).
 - No event is sent for `PositionReplaced` or `NavigatedTo` (R10).
 
 Haptics: `HapticFeedback.selectionClick()` on pickup and `lightImpact()` on drop, only when `enableHaptics` is on and the platform is Android or iOS.

@@ -155,7 +155,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
 
 ## Phase 9: Sound, haptics, accessibility wiring
 
-- [ ] 25. Wire sound and haptics into the board
+- [x] 25. Wire sound and haptics into the board
   - One event per successful move, `illegal` on rejected input, none on undo, reset, load, navigation or silent changes; haptics on pickup and drop.
   - Tests: a recording sound pack checks the event sequence across a scripted game; a throwing pack doesn't break play; haptics calls captured through the `SystemChannels.platform` mock.
   - _Req 10. Design 9_
