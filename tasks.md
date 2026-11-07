@@ -71,7 +71,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Golden tests: 5 themes x 3 label modes.
   - _Req 1, 7, 8, 9. Design 5.1, 5.3, 8_
 
-- [ ] 11. Controller listening and swap
+- [x] 11. Controller listening and swap
   - Listen to the controller and rebuild on change. On swap, unhook the old controller and reset all ephemeral state.
   - Tests: `controller.move()` updates the board with no app wiring; swapping controllers shows the new game and clears selection, hint and animation.
   - _Req 6. Design 5.9_
@@ -80,7 +80,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
 
 - [ ] 12. Pointer state machine and tap to move
   - Raw `Listener` state machine, selection notifier, legal-move cache per FEN, movability rules (read-only, game over, history view, interactive side, turn).
-  - Tests: every tap rule in R2; tapping an empty square with nothing selected causes no rebuild (`debugBuildCount`); read-only, game over, history view and interactive side each block moves while code moves still work.
+  - Tests: every tap rule in R2; tapping an empty square with nothing selected causes no rebuild (`debugBuildCount`); read-only, game over, history view and interactive side each block moves while code moves still work; a controller swap clears the selection.
   - _Req 1, 2. Design 5.4_
 
 - [ ] 13. Drag and drop
@@ -90,7 +90,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
 
 - [ ] 14. Promotion
   - Default overlay positioned and oriented, cancel paths (outside tap, Escape, back), `autoQueen`, `promotionPickerBuilder`.
-  - Tests: the picker appears by tap and by drag; each of the 4 choices applies; each cancel path leaves the FEN unchanged; auto-queen skips the picker; the custom builder is used.
+  - Tests: the picker appears by tap and by drag; each of the 4 choices applies; each cancel path leaves the FEN unchanged; auto-queen skips the picker; the custom builder is used; a controller swap closes a pending picker.
   - _Req 2. Design 5.4_
 
 - [ ] 15. Castling input
@@ -119,7 +119,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
 
 - [ ] 19. Move animator
   - Plans for tap and code moves, castling (king + rook), captured piece fade, no plan for drags, interrupt-and-commit, `disableAnimations`, zero duration.
-  - Tests: frame by frame at 0/50/100% the moving piece appears exactly once; a drag move has no in-flight piece; a second move mid-flight ends at the right final FEN; zero duration and reduced motion settle in one pump.
+  - Tests: frame by frame at 0/50/100% the moving piece appears exactly once; a drag move has no in-flight piece; a second move mid-flight ends at the right final FEN; zero duration and reduced motion settle in one pump; a controller swap ends a running animation.
   - _Req 4. Design 5.7_
 
 - [ ] 20. Flip animation and history-navigation animation
@@ -131,19 +131,19 @@ Each task is written test-first: write the failing tests, implement, then run `f
 
 - [ ] 21. App arrows, marks and hint
   - Arrows layer under `IgnorePointer`, distinct hint style, hint lifecycle (cleared on move by user or code, cleared when the app sets null, replaced by a new hint, timeout), bad squares ignored.
-  - Tests: taps go through arrows; arrows redraw after a list change and after a flip; each hint dismissal rule (timeout via `tester.pump(duration)`); `arrows` is never changed by the board; `Arrow('z9','e4')` doesn't crash.
+  - Tests: taps go through arrows; arrows redraw after a list change and after a flip; each hint dismissal rule (timeout via `tester.pump(duration)`); `arrows` is never changed by the board; `Arrow('z9','e4')` doesn't crash; a controller swap clears the hint.
   - _Req 5. Design 5.8_
 
 - [ ] 22. User-drawn annotations
   - Right-click and long-press drawing, circle toggle, modifier colors, callbacks, clear on move with an opt-out.
-  - Tests: draw arrow, draw again removes it; circle toggle; Shift gives the red color; long press on touch; cleared after a move unless opted out; disabled when `enableUserAnnotations` is false.
+  - Tests: draw arrow, draw again removes it; circle toggle; Shift gives the red color; long press on touch; cleared after a move unless opted out; disabled when `enableUserAnnotations` is false; a controller swap clears user drawings.
   - _Req 5. Design 5.6_
 
 ## Phase 8: Advanced input
 
 - [ ] 23. Premoves
   - Queue by tap or drag on the opponent's turn, premove highlight, cancel, auto-play on the opponent's move, silent discard if illegal.
-  - Tests: queue, cancel, play when legal, discard when illegal, unavailable when `interactiveSide` is both or premoves are off.
+  - Tests: queue, cancel, play when legal, discard when illegal, unavailable when `interactiveSide` is both or premoves are off; a controller swap drops a queued premove.
   - _Req 12. Design 5.5_
 
 - [ ] 24. Keyboard play
