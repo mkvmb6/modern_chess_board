@@ -21,6 +21,7 @@ import 'board_geometry.dart';
 import 'interaction/annotation_drawing.dart';
 import 'interaction/board_gesture_layer.dart';
 import 'interaction/board_interaction.dart';
+import 'interaction/board_keyboard.dart';
 import 'interaction/drag_layer.dart';
 import 'interaction/premove.dart';
 import 'layers/arrows_layer.dart';
@@ -60,6 +61,7 @@ class ChessBoard extends StatefulWidget {
     this.readOnly = false,
     this.interactiveSide = InteractiveSide.both,
     this.enablePremoves = false,
+    this.enableKeyboard = true,
     this.autoQueen = false,
     this.promotionPickerBuilder,
     this.onMove,
@@ -133,6 +135,26 @@ class ChessBoard extends StatefulWidget {
   /// target squares the user's own pieces hold, so a recapture can be
   /// queued. Off by default.
   final bool enablePremoves;
+
+  /// Whether the board can be played with a keyboard. When the board has
+  /// focus (Tab, or a click), the arrow keys move a cursor across the
+  /// squares, following the orientation; Enter or Space acts like a tap on
+  /// the cursor's square, and Escape clears the selection. Typing a move in
+  /// algebraic notation, such as `Nf3` or `O-O`, then Enter plays it.
+  ///
+  /// Lowercase piece letters (`nf3`) and coordinates (`e2e4`) work too.
+  /// While the promotion picker is open, up and down pick a piece and
+  /// Enter chooses it, or Q, R, B or N choose directly.
+  ///
+  /// Shift+H switches to history navigation, where left and right step
+  /// through history and Home and End jump to its ends. A [readOnly] board
+  /// is always in navigation mode. Keys with Ctrl, Cmd or Alt, and an
+  /// Escape with nothing to close, are left to the app.
+  ///
+  /// The cursor stays hidden until a key is pressed, so touch and mouse
+  /// users never see it. On by default; any hardware keyboard works,
+  /// including one attached to a phone or tablet.
+  final bool enableKeyboard;
 
   /// When true, pawns reaching the last rank become queens without asking.
   final bool autoQueen;
@@ -325,6 +347,67 @@ class _ChessBoardState extends State<ChessBoard>
 
   /// The queued premove, or null.
   final ValueNotifier<Premove?> _premove = ValueNotifier(null);
+
+  /// Keyboard focus for the board.
+  final FocusNode _focusNode = FocusNode(debugLabel: 'chess board');
+
+  /// Keyboard play; its actions go through the same rules as pointer input.
+  late final BoardKeyboard _keyboard = BoardKeyboard(
+    KeyboardActions(
+      orientation: () => widget.orientation,
+      tap: _keyTap,
+      clearSelection: () {
+        final had =
+            _interaction.selection.value != null || _premove.value != null;
+        _interaction.clear();
+        _cancelPremove();
+        return had;
+      },
+      busy: () => _promotion.value != null,
+      submitSan: _submitTypedMove,
+      navigationLocked: () => widget.readOnly,
+      back: () => widget.controller.back(),
+      forward: () => widget.controller.forward(),
+      toStart: () => widget.controller.goToStart(),
+      toEnd: () => widget.controller.goToEnd(),
+    ),
+  );
+
+  /// Enter or Space on [square]: a whole tap, through the same rules as a
+  /// pointer press.
+  void _keyTap(Square square) {
+    if (_promotion.value != null) return;
+    _onPressDown(square, PointerDeviceKind.unknown, fromKeyboard: true);
+    _pressOrigin = null;
+    _interaction.pressUp(dragged: false);
+  }
+
+  /// Plays a typed move if one legal move matches it and the user may move
+  /// that piece. Returns whether it was played.
+  bool _submitTypedMove(String san) {
+    final c = widget.controller;
+    if (_promotion.value != null) return false;
+    final legal = [
+      for (final m in c.legalMoves)
+        if (m.san != null) m,
+    ];
+    final matches = matchTypedMove(san, [
+      for (final m in legal)
+        (
+          san: m.san!,
+          from: m.from.name,
+          to: m.to.name,
+          promotion: m.promotion?.letter,
+        ),
+    ]);
+    if (matches.length != 1) return false;
+    final m = legal[matches.single];
+    final color = c.pieceAt(m.from)?.color;
+    if (color == null || !_interaction.canMove(color)) return false;
+    _interaction.clear();
+    _cancelPremove();
+    return applyUserMove(c, m.from, m.to, promotion: m.promotion);
+  }
 
   /// Queues a premove. Promotion premoves become a queen when played.
   bool _queuePremove(Square from, Square to) {
@@ -531,6 +614,7 @@ class _ChessBoardState extends State<ChessBoard>
           _interaction.selection,
           _hover,
           _premove,
+          _keyboard.focus,
         ]),
         builder: (context, _) {
           final selected = _interaction.selection.value;
@@ -548,6 +632,7 @@ class _ChessBoardState extends State<ChessBoard>
                 hover: _hover.value,
                 showLastMove: widget.showLastMove,
                 theme: theme,
+                focus: _keyboard.focus.value,
                 premove: queued == null
                     ? null
                     : (from: queued.from, to: queued.to),
@@ -714,6 +799,7 @@ class _ChessBoardState extends State<ChessBoard>
     _dismissHint();
     _clearUserDrawings(cancelDrawing: true);
     _cancelPremove();
+    _keyboard.reset();
   }
 
   /// Reports the change just seen to [ChessBoard.onMove] and
@@ -901,7 +987,22 @@ class _ChessBoardState extends State<ChessBoard>
     return piece != null && _interaction.canSelect(piece.color);
   }
 
-  bool _onPressDown(Square square, PointerDeviceKind kind) {
+  bool _onPressDown(
+    Square square,
+    PointerDeviceKind kind, {
+    bool fromKeyboard = false,
+  }) {
+    if (!fromKeyboard) {
+      // A pointer user: hide the keyboard cursor. A mouse click also takes
+      // focus, so keys work after it on desktop; touch doesn't, so a tap
+      // costs no rebuild and doesn't pull focus from the app's text fields.
+      _keyboard.hide();
+      if (kind == PointerDeviceKind.mouse &&
+          widget.enableKeyboard &&
+          !_focusNode.hasFocus) {
+        _focusNode.requestFocus();
+      }
+    }
     // A piece still sliding lands at once, so it can be pressed or
     // dragged without showing twice.
     _animation.finish();
@@ -1020,6 +1121,8 @@ class _ChessBoardState extends State<ChessBoard>
     _hintTimer?.cancel();
     _hint.dispose();
     _premove.dispose();
+    _keyboard.dispose();
+    _focusNode.dispose();
     _userDrawings.dispose();
     _drawing.dispose();
     super.dispose();
@@ -1069,6 +1172,28 @@ class _ChessBoardState extends State<ChessBoard>
     // Without a Material ancestor, the ambient style is Flutter's red
     // "missing Material" debug style; never let that tint the labels.
     final ambient = _isFallbackStyle(ambientStyle) ? null : ambientStyle.color;
+    return Focus(
+      focusNode: _focusNode,
+      canRequestFocus: widget.enableKeyboard,
+      skipTraversal: !widget.enableKeyboard,
+      onKeyEvent: (node, event) => widget.enableKeyboard
+          ? _keyboard.handle(event)
+          : KeyEventResult.ignored,
+      onFocusChange: (focused) {
+        // The promotion picker takes focus while open; that isn't leaving.
+        if (!focused && _promotion.value == null) _keyboard.reset();
+      },
+      child: _buildBoard(context, theme, dpr, ambientStyle, ambient),
+    );
+  }
+
+  Widget _buildBoard(
+    BuildContext context,
+    ChessBoardTheme theme,
+    double dpr,
+    TextStyle ambientStyle,
+    Color? ambient,
+  ) {
     return BoardLayout(
       coordinates: widget.coordinates,
       builder: (context, metrics) {
@@ -1292,11 +1417,79 @@ class _ChessBoardState extends State<ChessBoard>
                 ),
               ),
             ),
+            Positioned(
+              left: geometry.boardRect.left,
+              width: geometry.boardRect.width,
+              // Its bottom edge sits just above the board's bottom edge and
+              // it grows upward, so it never hangs over outside labels.
+              top: geometry.boardRect.bottom - geometry.squareSize * 0.15,
+              child: FractionalTranslation(
+                translation: const Offset(0, -1),
+                child: IgnorePointer(
+                  child: _KeyboardStatus(
+                    keyboard: _keyboard,
+                    squareSize: geometry.squareSize,
+                  ),
+                ),
+              ),
+            ),
           ],
         );
       },
     );
   }
+}
+
+/// Shows the move being typed, and a note while in navigation mode, as a
+/// small pill near the bottom of the board.
+class _KeyboardStatus extends StatelessWidget {
+  const _KeyboardStatus({required this.keyboard, required this.squareSize});
+
+  final BoardKeyboard keyboard;
+  final double squareSize;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge([keyboard.typed, keyboard.navigationMode]),
+    builder: (context, _) {
+      final typed = keyboard.typed.value;
+      final text = typed.isNotEmpty
+          ? typed
+          : keyboard.navigationMode.value
+          ? 'History \u2190 \u2192'
+          : null;
+      if (text == null) return const SizedBox.shrink();
+      return Center(
+        child: Semantics(
+          liveRegion: true,
+          label: typed.isNotEmpty ? 'Typed move $typed' : 'History navigation',
+          excludeSemantics: true,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: const Color(0xE6202124),
+              borderRadius: BorderRadius.circular(squareSize * 0.2),
+            ),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: squareSize * 0.25,
+                vertical: squareSize * 0.1,
+              ),
+              child: Text(
+                text,
+                style: TextStyle(
+                  color: const Color(0xFFFFFFFF),
+                  fontSize: (squareSize * 0.3).clamp(11.0, 20.0),
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.none,
+                  height: 1.2,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
 }
 
 /// Whether [style] is the red debug style Flutter uses for text with no
@@ -1400,6 +1593,15 @@ class _PromotionScopeState extends State<_PromotionScope> {
             widget.onCancel();
           }
         },
+        // The picker, which holds focus inside this scope, sees keys first.
+        // Keys it didn't use stop here rather than moving the board's
+        // cursor underneath. Escape goes on to the binding above, and Tab
+        // leaves, which cancels.
+        onKeyEvent: (node, event) =>
+            event.logicalKey == LogicalKeyboardKey.tab ||
+                event.logicalKey == LogicalKeyboardKey.escape
+            ? KeyEventResult.ignored
+            : KeyEventResult.skipRemainingHandlers,
         child: widget.child,
       ),
     ),

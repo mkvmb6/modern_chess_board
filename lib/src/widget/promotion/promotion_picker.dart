@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../model/piece.dart';
@@ -69,6 +70,10 @@ const Duration kPromotionPickerAppear = Duration(milliseconds: 120);
 /// It appears with a short fade and grows out of the promotion square, or
 /// at once when the platform asks for reduced motion. Tapping anywhere
 /// outside the column cancels. Escape and Back are handled by the board.
+///
+/// From the keyboard, up and down move between the choices (the queen is
+/// highlighted first), Enter or Space picks the highlighted one, and Q, R,
+/// B or N pick a piece directly.
 class PromotionPicker extends StatefulWidget {
   /// Creates the default picker.
   const PromotionPicker({
@@ -116,10 +121,65 @@ class _PromotionPickerState extends State<PromotionPicker>
     }
   }
 
+  /// Takes keyboard focus once shown. Key events travel from the focused
+  /// node up, so the picker must hold focus to see them; the board's
+  /// promotion scope above it still counts as focused.
+  final FocusNode _keys = FocusNode(debugLabel: 'promotion choices');
+
+  @override
+  void initState() {
+    super.initState();
+    // Runs after the scope's own focus request (the scope builds first),
+    // so the picker ends up with focus.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _keys.requestFocus();
+    });
+  }
+
   @override
   void dispose() {
     _appear.dispose();
+    _keys.dispose();
     super.dispose();
+  }
+
+  /// The highlighted choice for keyboard users, or null until a key is
+  /// pressed (so pointer users never see it).
+  int? _keyChoice;
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is KeyUpEvent) return KeyEventResult.ignored;
+    final request = widget.request;
+    final key = event.logicalKey;
+    // The column runs from the promotion square toward the center; on
+    // screen that is down when the promotion square is at the top.
+    final towardCenterIsDown =
+        widget.geometry.squareCenter(request.to).dy <
+        widget.geometry.boardRect.center.dy;
+    int move(int by) {
+      final current = _keyChoice;
+      if (current == null) return 0;
+      return (current + by).clamp(0, kPromotionChoices.length - 1);
+    }
+
+    switch (key) {
+      case LogicalKeyboardKey.arrowDown || LogicalKeyboardKey.arrowUp:
+        final down = key == LogicalKeyboardKey.arrowDown;
+        setState(() => _keyChoice = move(down == towardCenterIsDown ? 1 : -1));
+        return KeyEventResult.handled;
+      case LogicalKeyboardKey.enter ||
+          LogicalKeyboardKey.numpadEnter ||
+          LogicalKeyboardKey.space:
+        if (event is KeyRepeatEvent) return KeyEventResult.handled;
+        request.choose(kPromotionChoices[_keyChoice ?? 0]);
+        return KeyEventResult.handled;
+    }
+    final type = PieceType.fromLetter(event.character?.toLowerCase() ?? '');
+    if (type != null && kPromotionChoices.contains(type)) {
+      request.choose(type);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   @override
@@ -150,72 +210,78 @@ class _PromotionPickerState extends State<PromotionPicker>
     );
     final curve = CurvedAnimation(parent: _appear, curve: Curves.easeOutCubic);
 
-    return Stack(
-      children: [
-        // The scrim: dims the board and cancels when tapped.
-        Positioned.fill(
-          child: FadeTransition(
-            opacity: curve,
-            child: Semantics(
-              button: true,
-              label: 'Cancel promotion',
-              onTap: request.cancel,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
+    return Focus(
+      focusNode: _keys,
+      onKeyEvent: _onKey,
+      child: Stack(
+        children: [
+          // The scrim: dims the board and cancels when tapped.
+          Positioned.fill(
+            child: FadeTransition(
+              opacity: curve,
+              child: Semantics(
+                button: true,
+                label: 'Cancel promotion',
                 onTap: request.cancel,
-                child: ColoredBox(color: theme.promotionScrimColor),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: request.cancel,
+                  child: ColoredBox(color: theme.promotionScrimColor),
+                ),
               ),
             ),
           ),
-        ),
-        Positioned.fromRect(
-          rect: card,
-          child: FadeTransition(
-            opacity: curve,
-            child: ScaleTransition(
-              scale: Tween(begin: 0.85, end: 1.0).animate(curve),
-              alignment: alignment,
-              child: Stack(
-                children: [
-                  // A soft card behind the column, so the choices read as
-                  // one group.
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: theme.promotionBackgroundColor,
-                          borderRadius: BorderRadius.circular(size * 0.12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0x40000000),
-                              blurRadius: size * 0.25,
-                              offset: Offset(0, size * 0.06),
-                            ),
-                          ],
+          Positioned.fromRect(
+            rect: card,
+            child: FadeTransition(
+              opacity: curve,
+              child: ScaleTransition(
+                scale: Tween(begin: 0.85, end: 1.0).animate(curve),
+                alignment: alignment,
+                child: Stack(
+                  children: [
+                    // A soft card behind the column, so the choices read as
+                    // one group.
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: theme.promotionBackgroundColor,
+                            borderRadius: BorderRadius.circular(size * 0.12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0x40000000),
+                                blurRadius: size * 0.25,
+                                offset: Offset(0, size * 0.06),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  for (final (i, type) in kPromotionChoices.indexed)
-                    Positioned.fromRect(
-                      rect: geometry
-                          .squareRect(squares[i])
-                          .shift(-card.topLeft),
-                      child: _Choice(
-                        key: ValueKey('promotion-${type.name}'),
-                        piece: Piece(request.color, type),
-                        size: size,
-                        pieceSet: widget.pieceSet,
-                        hoverColor: theme.hoverColor,
-                        onTap: () => request.choose(type),
+                    for (final (i, type) in kPromotionChoices.indexed)
+                      Positioned.fromRect(
+                        rect: geometry
+                            .squareRect(squares[i])
+                            .shift(-card.topLeft),
+                        child: _Choice(
+                          key: ValueKey('promotion-${type.name}'),
+                          piece: Piece(request.color, type),
+                          size: size,
+                          pieceSet: widget.pieceSet,
+                          hoverColor: theme.hoverColor,
+                          focusColor: theme.focusColor,
+                          keyboardFocused: _keyChoice == i,
+                          onTap: () => request.choose(type),
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -227,6 +293,8 @@ class _Choice extends StatefulWidget {
     required this.size,
     required this.pieceSet,
     required this.hoverColor,
+    required this.focusColor,
+    required this.keyboardFocused,
     required this.onTap,
   });
 
@@ -234,6 +302,8 @@ class _Choice extends StatefulWidget {
   final double size;
   final PieceSet pieceSet;
   final Color hoverColor;
+  final Color focusColor;
+  final bool keyboardFocused;
   final VoidCallback onTap;
 
   @override
@@ -245,13 +315,15 @@ class _ChoiceState extends State<_Choice> {
 
   @override
   Widget build(BuildContext context) {
-    final inset = widget.size * (_hover ? 0.02 : 0.08);
+    final lifted = _hover || widget.keyboardFocused;
+    final inset = widget.size * (lifted ? 0.02 : 0.08);
     // The tap action lives on the Semantics node itself: excludeSemantics
     // drops the GestureDetector's own action, so screen readers would find
     // the choice but couldn't activate it.
     return Semantics(
       button: true,
       label: 'Promote to ${widget.piece.type.name}',
+      focused: widget.keyboardFocused ? true : null,
       onTap: widget.onTap,
       excludeSemantics: true,
       child: MouseRegion(
@@ -263,8 +335,14 @@ class _ChoiceState extends State<_Choice> {
           onTap: widget.onTap,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: _hover ? widget.hoverColor : null,
+              color: lifted ? widget.hoverColor : null,
               shape: BoxShape.circle,
+              border: widget.keyboardFocused
+                  ? Border.all(
+                      color: widget.focusColor,
+                      width: (widget.size * 0.05).clamp(2.0, 4.0),
+                    )
+                  : null,
             ),
             child: Padding(
               padding: EdgeInsets.all(inset),

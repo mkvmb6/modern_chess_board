@@ -28,6 +28,8 @@ class BoardHighlights {
     required this.hover,
     required this.markerColor,
     required this.hoverColor,
+    this.focus,
+    this.focusColor = const Color(0x00000000),
   });
 
   /// No highlights at all.
@@ -56,6 +58,7 @@ class BoardHighlights {
     required ChessBoardTheme theme,
     ({Square from, Square to})? premove,
     Set<Square>? premoveTargets,
+    Square? focus,
   }) {
     final tints = <Square, Color>{};
     if (showLastMove) {
@@ -120,8 +123,16 @@ class BoardHighlights {
       hover: hoverShown ? hover : null,
       markerColor: theme.legalMoveColor,
       hoverColor: theme.hoverColor,
+      focus: focus,
+      focusColor: theme.focusColor,
     );
   }
+
+  /// The keyboard focus cursor, or null when hidden.
+  final Square? focus;
+
+  /// The color of the [focus] ring.
+  final Color focusColor;
 
   /// One tint per square.
   final Map<Square, Color> tints;
@@ -142,6 +153,8 @@ class BoardHighlights {
   bool operator ==(Object other) =>
       other is BoardHighlights &&
       other.hover == hover &&
+      other.focus == focus &&
+      other.focusColor == focusColor &&
       other.markerColor == markerColor &&
       other.hoverColor == hoverColor &&
       mapEquals(other.tints, tints) &&
@@ -150,6 +163,8 @@ class BoardHighlights {
   @override
   int get hashCode => Object.hash(
     hover,
+    focus,
+    focusColor,
     markerColor,
     hoverColor,
     Object.hashAllUnordered(

@@ -148,7 +148,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Tests: queue, cancel, play when legal, discard when illegal, unavailable when `interactiveSide` is both or premoves are off; a controller swap drops a queued premove.
   - _Req 12. Design 5.5_
 
-- [ ] 24. Keyboard play
+- [x] 24. Keyboard play
   - Focus, focus cursor (orientation-aware), Enter/Space, Escape, navigation mode with left/right, SAN entry. Enter/Space go through `BoardInteraction.tap`, so they use the same rules and `resolveTarget` as pointer input.
   - Tests: `sendKeyEvent` sequences that play e2e4; Escape clears; left arrow in navigation mode calls `back()`; typing `Nf3` plus Enter moves.
   - _Req 11. Design 5.10_

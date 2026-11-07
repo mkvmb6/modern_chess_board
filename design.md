@@ -255,10 +255,12 @@ In `didUpdateWidget`, when `oldWidget.controller != widget.controller`, the boar
 
 ### 5.10 Keyboard
 
-- Keyboard handling is a `Focus` with `onKeyEvent`, enabled when `enableKeyboard` is on and the platform is desktop or web. A focus ring is painted in the highlight layer.
+- Keyboard handling is a `Focus` with `onKeyEvent`, enabled when `enableKeyboard` is on (the default), on every platform, so a hardware keyboard on a tablet works too. The focus ring is painted in the highlight layer and stays hidden until a key is pressed; a pointer press hides it. A mouse click takes focus; a touch tap doesn't, so an idle tap still costs no rebuild.
+- Keys with Ctrl, Cmd or Alt pass through to the app, and so does an Escape with nothing to close.
 - Arrow keys move the focus cursor, flipped for black orientation. Enter and Space act like a tap on the focused square. Escape clears the selection.
-- While the board is in navigation mode (toggled with `N`, or whenever it is read-only), left and right arrows call `controller.back()` and `controller.forward()`.
-- Typing a SAN string followed by Enter calls `moveSan`.
+- While the board is in navigation mode (toggled with Shift+H, or whenever it is read-only), left and right arrows call `controller.back()` and `controller.forward()`, and Home and End jump. A letter can't toggle it, because letters type moves. A read-only board ignores typing and the cursor.
+- Typing a move followed by Enter plays it as a user move (respecting `interactiveSide`). SAN is matched ignoring check marks and `=`, castling may use zeros or a lowercase o, lowercase piece letters work (`b` prefers the b-pawn), and coordinates such as `e2e4` work. A rejected move stays on screen for correction.
+- The promotion picker takes keys while open: up and down move between choices, Enter or Space chooses, and Q, R, B or N choose directly.
 
 ## 6. Theming (`src/theme`)
 

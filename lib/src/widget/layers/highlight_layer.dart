@@ -49,6 +49,7 @@ class BoardMarkersPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    _paintFocus(canvas);
     if (highlights.markers.isEmpty) return;
     final s = geometry.squareSize;
     final fill = Paint()
@@ -75,6 +76,30 @@ class BoardMarkersPainter extends CustomPainter {
           );
       }
     }
+  }
+
+  /// The keyboard cursor: a square outline just inside the square, with a
+  /// thin light edge inside it so it reads on both square colors.
+  void _paintFocus(Canvas canvas) {
+    final square = highlights.focus;
+    if (square == null) return;
+    final s = geometry.squareSize;
+    final width = (s * 0.06).clamp(2.0, 4.0);
+    final rect = geometry.squareRect(square).deflate(width / 2);
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..color = highlights.focusColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width,
+    );
+    canvas.drawRect(
+      rect.deflate(width / 2 + 0.5),
+      Paint()
+        ..color = const Color(0xCCFFFFFF)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
   }
 
   @override

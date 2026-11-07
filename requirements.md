@@ -168,7 +168,7 @@ Labels follow orientation and stay readable on very small boards (minimum font s
 - Screen readers can make moves with the standard activate gesture, using the same tap-to-move flow.
 - After each move, the board announces it in words (e.g. "White knight to f3, check").
 - Text and labels respect the platform text scale without breaking the layout.
-- **Keyboard play:** on desktop and web, the board is focusable, arrow keys move a focus cursor across squares, Enter/Space selects and moves, Escape clears selection, and left/right arrows navigate history when the board is not in move-entry focus. Typing a move in SAN is an optional extra.
+- **Keyboard play:** on desktop and web, the board is focusable, arrow keys move a focus cursor across squares, Enter/Space selects and moves, Escape clears selection, and left/right arrows navigate history when the board is not in move-entry focus. Typing a move in SAN is an optional extra. Keyboard play works with any hardware keyboard, including on tablets; the cursor appears only once a key is pressed.
 
 ## 12. Premoves
 
