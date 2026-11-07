@@ -88,7 +88,7 @@ Each task is written test-first: write the failing tests, implement, then run `f
   - Tests: a movement below the threshold counts as a tap; an illegal drop snaps back with the position unchanged; dragging replaces the tap selection; the source square is empty during the drag; scale ≤ 1.15 and overflow ≤ 4 px at 120 px board; cursor values from `MouseRegion`; a controller swap cancels an in-progress drag.
   - _Req 2, 3. Design 5.4_
 
-- [ ] 14. Promotion
+- [x] 14. Promotion
   - Default overlay positioned and oriented, cancel paths (outside tap, Escape, back), `autoQueen`, `promotionPickerBuilder`.
   - Tests: the picker appears by tap and by drag; each of the 4 choices applies; each cancel path leaves the FEN unchanged; auto-queen skips the picker; the custom builder is used; a controller swap closes a pending picker.
   - _Req 2. Design 5.4_

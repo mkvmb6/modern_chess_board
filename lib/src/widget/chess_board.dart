@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../controller/chess_board_controller.dart';
@@ -14,6 +15,7 @@ import 'interaction/drag_layer.dart';
 import 'layers/labels_layer.dart';
 import 'layers/pieces_layer.dart';
 import 'layers/squares_layer.dart';
+import 'promotion/promotion_picker.dart';
 
 /// An interactive chess board.
 ///
@@ -42,6 +44,8 @@ class ChessBoard extends StatefulWidget {
     this.coordinates = CoordinateMode.inside,
     this.readOnly = false,
     this.interactiveSide = InteractiveSide.both,
+    this.autoQueen = false,
+    this.promotionPickerBuilder,
   });
 
   /// The game shown on the board.
@@ -87,6 +91,14 @@ class ChessBoard extends StatefulWidget {
   /// Which colors the user may move, for example only black when the app
   /// plays white. Defaults to both.
   final InteractiveSide interactiveSide;
+
+  /// When true, pawns reaching the last rank become queens without asking.
+  final bool autoQueen;
+
+  /// Replaces the built-in promotion picker. The widget it returns is laid
+  /// over the whole board; call [PromotionRequest.choose] or
+  /// [PromotionRequest.cancel] to finish.
+  final PromotionPickerBuilder? promotionPickerBuilder;
 
   /// The theme with the shortcut color parameters applied.
   ChessBoardTheme get effectiveTheme =>
@@ -143,6 +155,14 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
   /// rebuild on every pointer move.
   final ValueNotifier<Square?> _draggedFrom = ValueNotifier(null);
 
+  /// A pawn move waiting for the promotion choice, or null. While set, the
+  /// pawn is hidden from its square and the picker covers the board.
+  final ValueNotifier<_PendingPromotion?> _promotion = ValueNotifier(null);
+
+  /// The square left empty on the board, kept apart from [_draggedFrom] so a
+  /// waiting promotion doesn't show the grabbing cursor.
+  final ValueNotifier<Square?> _hiddenSquare = ValueNotifier(null);
+
   /// The square a press started on and the pointer kind, while the press
   /// could still become a drag of that square's piece.
   (Square, PointerDeviceKind)? _pressOrigin;
@@ -159,6 +179,8 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
     );
     _seenChangeId = widget.controller.changeId;
     widget.controller.addListener(_onControllerChanged);
+    _draggedFrom.addListener(_syncHiddenSquare);
+    _promotion.addListener(_syncHiddenSquare);
   }
 
   /// Loads [ChessBoard.initialFen] into a controller that hasn't been used
@@ -208,6 +230,7 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
       ..interactiveSide = widget.interactiveSide
       ..revalidate();
     if (_drag.value case final d? when !_canDragFrom(d.from)) _cancelDrag();
+    _revalidatePromotion();
     if (widget.pieceSet != oldWidget.pieceSet &&
         widget.pieceSet != _loadingSet) {
       _load(widget.pieceSet);
@@ -219,6 +242,7 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
   /// running animations. Called when the controller is swapped. Later
   /// features add their state here rather than resetting it elsewhere.
   void _resetEphemeralState() {
+    _cancelPromotion();
     _interaction.clear();
     _cancelDrag();
   }
@@ -234,20 +258,68 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
       _interaction.clear();
       // A drag from the old position can't land in the new one.
       _cancelDrag();
+      _cancelPromotion();
       _positionChanges.notify();
     } else {
       _interaction.revalidate();
       if (_drag.value case final d? when !_canDragFrom(d.from)) _cancelDrag();
+      _revalidatePromotion();
     }
   }
 
-  bool _requestMove(Square from, Square to) => applyUserMove(
-    widget.controller,
-    from,
-    to,
-    // Promotion choice arrives with task 14; until then, promote to queen.
-    promotion: PieceType.queen,
-  );
+  /// Carries out a user move. A pawn reaching the last rank waits for the
+  /// promotion choice, unless [ChessBoard.autoQueen] is set. Returns true
+  /// when the move was made or is waiting for a choice.
+  bool _requestMove(Square from, Square to) {
+    final promotes = widget.controller
+        .legalMovesFrom(from)
+        .any((m) => m.to == to && m.isPromotion);
+    if (!promotes || widget.autoQueen) {
+      return applyUserMove(
+        widget.controller,
+        from,
+        to,
+        promotion: PieceType.queen,
+      );
+    }
+    final color = widget.controller.pieceAt(from)!.color;
+    _promotion.value = (from: from, to: to, color: color);
+    return true;
+  }
+
+  void _choosePromotion(PieceType type) {
+    final pending = _promotion.value;
+    if (pending == null) return;
+    _promotion.value = null;
+    applyUserMove(widget.controller, pending.from, pending.to, promotion: type);
+  }
+
+  void _cancelPromotion() {
+    if (_promotion.value == null) return;
+    _promotion.value = null;
+  }
+
+  /// The square whose piece the pieces layer leaves out: the dragged piece's
+  /// origin, or the pawn waiting for its promotion choice.
+  void _syncHiddenSquare() =>
+      _hiddenSquare.value = _draggedFrom.value ?? _promotion.value?.from;
+
+  /// Closes the picker if its pawn can no longer move, for example after the
+  /// board became read-only.
+  void _revalidatePromotion() {
+    final pending = _promotion.value;
+    if (pending != null && !_canDragFrom(pending.from)) _cancelPromotion();
+  }
+
+  PromotionRequest _requestFor(_PendingPromotion p, BoardGeometry g) =>
+      PromotionRequest(
+        from: p.from,
+        to: p.to,
+        color: p.color,
+        squareRect: g.squareRect(p.to),
+        choose: _choosePromotion,
+        cancel: _cancelPromotion,
+      );
 
   bool _canDragFrom(Square square) {
     final piece = widget.controller.pieceAt(square);
@@ -331,6 +403,8 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
     _positionChanges.dispose();
     _drag.dispose();
     _draggedFrom.dispose();
+    _promotion.dispose();
+    _hiddenSquare.dispose();
     super.dispose();
   }
 
@@ -433,7 +507,7 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
               child: PiecesLayer(
                 controller: widget.controller,
                 positionChanges: _positionChanges,
-                hiddenSquare: _draggedFrom,
+                hiddenSquare: _hiddenSquare,
                 geometry: geometry,
                 pieceSet: _shownSet,
               ),
@@ -467,6 +541,39 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
                 ),
               ),
             ),
+            Positioned.fill(
+              child: ValueListenableBuilder<_PendingPromotion?>(
+                valueListenable: _promotion,
+                builder: (context, pending, _) {
+                  if (pending == null) return const SizedBox.shrink();
+                  final request = _requestFor(pending, geometry);
+                  final custom = widget.promotionPickerBuilder;
+                  final Widget picker = custom == null
+                      ? PromotionPicker(
+                          request: request,
+                          geometry: geometry,
+                          pieceSet: _shownSet ?? widget.pieceSet,
+                          theme: theme,
+                        )
+                      : Stack(
+                          children: [
+                            // Taps outside a custom picker cancel too.
+                            Positioned.fill(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: request.cancel,
+                              ),
+                            ),
+                            Positioned.fill(child: custom(context, request)),
+                          ],
+                        );
+                  return _PromotionScope(
+                    onCancel: request.cancel,
+                    child: picker,
+                  );
+                },
+              ),
+            ),
           ],
         );
       },
@@ -480,6 +587,70 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
 bool _isFallbackStyle(TextStyle style) =>
     style.color == const Color(0xD0FF0000) &&
     style.decoration == TextDecoration.underline;
+
+/// A pawn move waiting for the user to choose a piece.
+typedef _PendingPromotion = ({Square from, Square to, PieceColor color});
+
+/// Lets Escape and the system Back action cancel an open promotion picker,
+/// instead of leaving the page. Takes keyboard focus while open so Escape
+/// works right after the press that opened it, and cancels when focus moves
+/// elsewhere (for example to a text field next to the board), so the picker
+/// never lingers where Escape can't reach it.
+class _PromotionScope extends StatefulWidget {
+  const _PromotionScope({required this.onCancel, required this.child});
+
+  final VoidCallback onCancel;
+  final Widget child;
+
+  @override
+  State<_PromotionScope> createState() => _PromotionScopeState();
+}
+
+class _PromotionScopeState extends State<_PromotionScope> {
+  final FocusNode _focus = FocusNode(debugLabel: 'promotion picker');
+
+  /// Set once the picker has received focus, so losing focus before then
+  /// (while the request is still pending) doesn't cancel.
+  bool _hadFocus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focus.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: false,
+    onPopInvokedWithResult: (didPop, _) {
+      if (!didPop) widget.onCancel();
+    },
+    child: CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): widget.onCancel,
+      },
+      child: Focus(
+        focusNode: _focus,
+        onFocusChange: (focused) {
+          if (focused) {
+            _hadFocus = true;
+          } else if (_hadFocus) {
+            widget.onCancel();
+          }
+        },
+        child: widget.child,
+      ),
+    ),
+  );
+}
 
 /// A listenable that notifies on demand.
 class _ChangeSignal extends ChangeNotifier {
