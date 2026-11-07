@@ -105,7 +105,8 @@ Each task is written test-first: write the failing tests, implement, then run `f
 
 ## Phase 5: Visual feedback
 
-- [ ] 17. Highlight layer
+- [x] 17. Highlight layer
+  - Chess960 follow-up: take the castling rook square from the castling rights rather than the a/h file.
   - Selection, legal dots and rings (en passant as a ring), last move with the no-double-tint rule, `showLastMove`, checkmate tint, optional check tint, hover on desktop. While the king is selected, also ring its own rook when castling on that side is legal, so the king-onto-rook tap is visible beforehand.
   - Tests: painted colors per square checked through a test hook on the painter's input model; selection over the last move uses only the selection color; check tint is off by default and on when a color is given.
   - _Req 3. Design 5.3_

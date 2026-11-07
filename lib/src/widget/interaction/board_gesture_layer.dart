@@ -1,4 +1,5 @@
 import 'package:flutter/gestures.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -41,6 +42,7 @@ class BoardGestureLayer extends StatefulWidget {
     required this.onPressUp,
     required this.onPressCancel,
     this.refresh,
+    this.onHoverSquare,
   });
 
   /// Where squares are, in this widget's coordinates.
@@ -71,6 +73,10 @@ class BoardGestureLayer extends StatefulWidget {
   /// Notifies when the position changes, so the cursor can be rechecked
   /// without waiting for the mouse to move.
   final Listenable? refresh;
+
+  /// Called with the square under a hovering mouse, or null when it leaves
+  /// the playing area. Only fires when the square changes.
+  final ValueChanged<Square?>? onHoverSquare;
 
   @override
   State<BoardGestureLayer> createState() => _BoardGestureLayerState();
@@ -177,9 +183,31 @@ class _BoardGestureLayerState extends State<BoardGestureLayer> {
     _recheckHover();
   }
 
+  Square? _hoverSquare;
+
+  /// Reports a new hover square. During a build (for example after a flip
+  /// or resize moved the squares under a resting mouse) the report waits
+  /// until after the frame, because the listener rebuilds other widgets.
+  void _reportHover(Square? square) {
+    final callback = widget.onHoverSquare;
+    if (callback == null) return;
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _hoverSquare == square) callback(square);
+      });
+    } else {
+      callback(square);
+    }
+  }
+
   void _recheckHover() {
     final at = _hoverAt;
     final square = at == null ? null : widget.geometry.squareAt(at);
+    if (square != _hoverSquare) {
+      _hoverSquare = square;
+      _reportHover(square);
+    }
     final grabbable = square != null && widget.canDragFrom(square);
     if (grabbable != _hoverGrabbable && mounted) {
       setState(() => _hoverGrabbable = grabbable);

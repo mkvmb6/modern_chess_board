@@ -197,18 +197,14 @@ void main() {
     test('a rook on another rank never counts as castling', () {
       // Without the same-rank guard, king e1 onto the rook on h2 would
       // pick the kingside castle.
-      final c = ChessBoardController(
-        fen: '4k3/8/8/8/8/8/7R/R3K2R w KQ - 0 1',
-      );
+      final c = ChessBoardController(fen: '4k3/8/8/8/8/8/7R/R3K2R w KQ - 0 1');
       final (i, _) = setup(c);
       expect(i.resolveTarget(Square.e1, Square.h2), isNull);
     });
 
     test('dropping the king on its rook when castling is illegal is '
         'rejected', () {
-      final c = ChessBoardController(
-        fen: 'r3k2r/8/8/8/8/8/8/R3K2R w kq - 0 1',
-      );
+      final c = ChessBoardController(fen: 'r3k2r/8/8/8/8/8/8/R3K2R w kq - 0 1');
       final (i, requests) = setup(c);
       expect(i.drop(Square.e1, Square.h1), TapOutcome.illegal);
       expect(requests, isEmpty);

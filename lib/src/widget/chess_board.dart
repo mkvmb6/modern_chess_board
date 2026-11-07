@@ -15,6 +15,8 @@ import 'board_geometry.dart';
 import 'interaction/board_gesture_layer.dart';
 import 'interaction/board_interaction.dart';
 import 'interaction/drag_layer.dart';
+import 'layers/highlight_layer.dart';
+import 'layers/highlight_model.dart';
 import 'layers/labels_layer.dart';
 import 'layers/pieces_layer.dart';
 import 'layers/squares_layer.dart';
@@ -51,6 +53,7 @@ class ChessBoard extends StatefulWidget {
     this.promotionPickerBuilder,
     this.onMove,
     this.onGameEnd,
+    this.showLastMove = true,
   });
 
   /// The game shown on the board.
@@ -120,6 +123,9 @@ class ChessBoard extends StatefulWidget {
   /// one `notifyListeners()` count as a single change.
   final ValueChanged<GameEnd>? onGameEnd;
 
+  /// Whether the from and to squares of the last move are highlighted.
+  final bool showLastMove;
+
   /// The theme with the shortcut color parameters applied.
   ChessBoardTheme get effectiveTheme =>
       lightSquareColor == null &&
@@ -182,6 +188,37 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
   /// The square left empty on the board, kept apart from [_draggedFrom] so a
   /// waiting promotion doesn't show the grabbing cursor.
   final ValueNotifier<Square?> _hiddenSquare = ValueNotifier(null);
+
+  /// The square under a hovering mouse, for the hover tint.
+  final ValueNotifier<Square?> _hover = ValueNotifier(null);
+
+  /// A highlight painter that repaints only when the position, selection or
+  /// hover changes, and only if what it would paint actually differs.
+  Widget _highlightLayer(
+    ChessBoardTheme theme,
+    CustomPainter Function(BoardHighlights) painter,
+  ) => IgnorePointer(
+    child: RepaintBoundary(
+      child: ListenableBuilder(
+        listenable: Listenable.merge([
+          _positionChanges,
+          _interaction.selection,
+          _hover,
+        ]),
+        builder: (context, _) => CustomPaint(
+          painter: painter(
+            BoardHighlights.compute(
+              controller: widget.controller,
+              selected: _interaction.selection.value,
+              hover: _hover.value,
+              showLastMove: widget.showLastMove,
+              theme: theme,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 
   /// The square a press started on and the pointer kind, while the press
   /// could still become a drag of that square's piece.
@@ -445,6 +482,7 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
     _draggedFrom.dispose();
     _promotion.dispose();
     _hiddenSquare.dispose();
+    _hover.dispose();
     super.dispose();
   }
 
@@ -516,6 +554,12 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
                 ),
               ),
             ),
+            Positioned.fill(
+              child: _highlightLayer(
+                theme,
+                (h) => BoardTintsPainter(geometry: geometry, highlights: h),
+              ),
+            ),
             if (labels.isNotEmpty)
               Positioned.fill(
                 child: RepaintBoundary(
@@ -553,6 +597,12 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
               ),
             ),
             Positioned.fill(
+              child: _highlightLayer(
+                theme,
+                (h) => BoardMarkersPainter(geometry: geometry, highlights: h),
+              ),
+            ),
+            Positioned.fill(
               // Keeps per-move repaints of the floating piece from reaching
               // the app content around the board.
               child: RepaintBoundary(
@@ -578,6 +628,7 @@ class _ChessBoardState extends State<ChessBoard> implements BoardStateDebug {
                   onPressUp: (p, {required dragged}) =>
                       _onPressUp(p, geometry, dragged: dragged),
                   onPressCancel: _onPressCancel,
+                  onHoverSquare: (s) => _hover.value = s,
                 ),
               ),
             ),
@@ -632,11 +683,7 @@ bool _isFallbackStyle(TextStyle style) =>
 @immutable
 class GameEnd {
   /// Creates a game end.
-  const GameEnd({
-    required this.status,
-    required this.result,
-    this.drawReason,
-  });
+  const GameEnd({required this.status, required this.result, this.drawReason});
 
   GameEnd._of(ChessBoardController c)
     : status = c.status,
